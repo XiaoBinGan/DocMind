@@ -8,6 +8,8 @@
   <img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="License">
 </p>
 
+**中文 | [English](README_EN.md)**
+
 > 🧠 **DocMind** — 基于 PageIndex 思想的推理式 RAG 系统，让 AI 像专家一样阅读文档。告别向量相似度，拥抱真正的相关性。
 
 ---
