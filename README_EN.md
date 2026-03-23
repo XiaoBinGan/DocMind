@@ -503,11 +503,6 @@ DocMind is looking for passionate open-source contributors to join the core main
    - Start with small improvements
    - Showcase your code quality and ability
 
-4. **Contact Core Team**
-   - Email: [docmind@supremind.com](mailto:docmind@supremind.com)
-   - WeChat: Add with note "DocMind Contributor"
-   - Discord: [Join our community](https://discord.gg/docmind)
-
 ### Maintainer Benefits
 
 ✨ **Get the following benefits**:

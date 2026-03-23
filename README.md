@@ -503,11 +503,6 @@ DocMind 正在寻找热情的开源贡献者加入核心维护团队！
    - 从小的改进开始
    - 展示你的代码质量和能力
 
-4. **联系核心团队**
-   - 邮件：[docmind@supremind.com](mailto:docmind@supremind.com)
-   - 微信：添加备注 "DocMind 贡献者"
-   - Discord：[加入我们的社区](https://discord.gg/docmind)
-
 ### 维护人员权益
 
 ✨ **获得以下权益**：
