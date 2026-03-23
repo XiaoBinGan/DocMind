@@ -266,7 +266,7 @@ A: 通常在 1-3 天内，取决于维护者的可用性。
 
 - 📖 查看 [文档](README.md)
 - 💬 在 [Discussions](https://github.com/XiaoBinGan/DocMind/discussions) 中提问
-- 📧 发送邮件至 [docmind@supremind.com](mailto:docmind@supremind.com)
+- 📧 发送邮件至 [solitaryhao8@gmail.com](mailto:solitaryhao8@gmail.com)
 - 🐦 在 Twitter 上关注 [@DocMindAI](https://twitter.com/DocMindAI)
 
 ---

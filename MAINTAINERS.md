@@ -71,7 +71,7 @@
 
 1. **表达兴趣**
    - 在 Issue 或 Discussion 中表达你的兴趣
-   - 或发送邮件至 [docmind@supremind.com](mailto:docmind@supremind.com)
+   - 或发送邮件至 [solitaryhao8@gmail.com](mailto:solitaryhao8@gmail.com)
 
 2. **核心团队评估**
    - 审查你的贡献历史
@@ -116,7 +116,7 @@
 
 ## 联系方式
 
-- 📧 邮件：[docmind@supremind.com](mailto:docmind@supremind.com)
+- 📧 邮件：[solitaryhao8@gmail.com](mailto:solitaryhao8@gmail.com)
 - 💬 Discord：[加入我们的社区](https://discord.gg/docmind)
 - 🐦 Twitter：[@DocMindAI](https://twitter.com/DocMindAI)
 - 📱 微信：添加备注 "DocMind 维护人员"
