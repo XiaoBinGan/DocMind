@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'DocMind - Reasoning-based RAG',
-  description: 'AI-powered document analysis with PageIndex',
+  title: 'DocMind - 智能文档问答',
+  description: 'AI-powered intelligent document Q&A',
 }
 
 export default function RootLayout({

@@ -11,8 +11,8 @@ export default function Home() {
   const features = [
     {
       icon: <Layers className={styles.featureIcon} />,
-      title: "PageIndex",
-      description: "推理式索引，像专家一样阅读文档",
+      title: "智能索引",
+      description: "像专家一样阅读文档",
       link: "/documents"
     },
     {
@@ -68,7 +68,7 @@ export default function Home() {
         <div className={styles.hero}>
           <div className={styles.heroBadge}>
             <Sparkles size={14} />
-            <span>基于 PageIndex 推理式 RAG</span>
+            <span>推理式文档问答</span>
           </div>
           
           <h1 className={styles.heroTitle}>
@@ -131,7 +131,7 @@ export default function Home() {
               <div className={styles.stepNumber}>2</div>
               <div className={styles.stepContent}>
                 <h3>构建索引树</h3>
-                <p>PageIndex 自动分析文档结构</p>
+                <p>智能分析文档结构</p>
               </div>
             </div>
             <div className={styles.stepConnector} />
@@ -148,7 +148,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className={styles.footer}>
-        <p>DocMind - Powered by PageIndex & LLM</p>
+        <p>DocMind - Powered by LLM</p>
       </footer>
     </div>
   )

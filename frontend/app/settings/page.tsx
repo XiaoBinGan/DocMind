@@ -237,13 +237,13 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* PageIndex Settings Section */}
+        {/* Index Settings Section */}
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <Settings size={20} />
             <div>
               <h2>索引参数</h2>
-              <p>配置 PageIndex 索引行为</p>
+              <p>配置索引行为</p>
             </div>
           </div>
 
