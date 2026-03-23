@@ -27,25 +27,39 @@
 
 ## 🏗️ 系统架构
 
-```
-┌─────────────────────────────────────────────────────┐
-│                      前端 (Next.js)                    │
-│   首页 │ 文档管理 │ RAG 对话 │ 索引树 │ 设置          │
-└──────────────┬──────────────────────────────────────┘
-               │ HTTP / SSE
-┌──────────────▼──────────────────────────────────────┐
-│                   后端 (FastAPI)                      │
-│                                                       │
-│  ┌──────────┐  ┌──────────────┐  ┌──────────────┐   │
-│  │ Parser   │→ │  PageIndexer │→ │  PageRetriever│   │
-│  │ (Marker) │  │  (构建索引树) │  │  (推理检索)   │   │
-│  └──────────┘  └──────────────┘  └──────────────┘   │
-│                                           │           │
-│                                    ┌──────▼──────┐    │
-│                                    │  LLM Service │    │
-│                                    │ (OpenAI/Qwen)│    │
-│                                    └─────────────┘     │
-└──────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    subgraph Frontend["🎨 前端 (Next.js 14)"]
+        Home["首页"]
+        DocMgmt["文档管理"]
+        Chat["RAG 对话"]
+        IndexTree["索引树可视化"]
+        Settings["模型配置"]
+    end
+
+    subgraph Backend["⚙️ 后端 (FastAPI)"]
+        subgraph Pipeline["处理管道"]
+            Parser["📄 Parser<br/>(Marker/PyPDF2)"]
+            Indexer["🌳 PageIndexer<br/>(构建索引树)"]
+            Retriever["🔍 PageRetriever<br/>(推理检索)"]
+        end
+        
+        LLMService["🤖 LLM Service<br/>(OpenAI/Anthropic/Qwen)"]
+        Database["💾 SQLite<br/>(文档元数据)"]
+    end
+
+    Frontend -->|HTTP/SSE| Backend
+    
+    Parser -->|Markdown| Indexer
+    Indexer -->|索引树| Retriever
+    Retriever -->|上下文| LLMService
+    
+    Backend -->|存储| Database
+    
+    style Frontend fill:#e1f5ff
+    style Backend fill:#f3e5f5
+    style Pipeline fill:#fff3e0
+    style LLMService fill:#e8f5e9
 ```
 
 ---
