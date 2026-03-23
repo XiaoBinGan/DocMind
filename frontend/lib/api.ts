@@ -165,6 +165,7 @@ class ApiClient {
     let currentEvent = ""
     let messageId = ""
     let conversationId = ""
+    let doneReceived = false
 
     while (true) {
       const { done, value } = await reader.read()
@@ -187,9 +188,14 @@ class ApiClient {
             onChunk(data)
           } else if (currentEvent === "done") {
             messageId = data
+            doneReceived = true
             onStatus?.("完成")
           } else if (currentEvent === "conversation_id") {
             conversationId = data
+            // 如果已经收到 done 事件，立即调用 onDone
+            if (doneReceived) {
+              onDone(messageId, conversationId)
+            }
           }
         }
       }
@@ -206,11 +212,21 @@ class ApiClient {
         const data = finalLines[i].slice(5).trim()
         if (!data) continue
         if (currentEvent === "chunk") onChunk(data)
-        else if (currentEvent === "done") { messageId = data; onStatus?.("完成") }
-        else if (currentEvent === "conversation_id") conversationId = data
+        else if (currentEvent === "done") { 
+          messageId = data
+          doneReceived = true
+          onStatus?.("完成") 
+        }
+        else if (currentEvent === "conversation_id") { 
+          conversationId = data
+          if (doneReceived) {
+            onDone(messageId, conversationId)
+          }
+        }
       }
     }
 
+    // 确保 onDone 被调用
     onDone(messageId, conversationId)
   }
 }
