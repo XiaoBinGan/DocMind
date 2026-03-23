@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+.env.local
+.env.*.local
+
+# Backend
+*.db
+*.sqlite
+*.sqlite3
+uploads/
+*.log
+
+# Node
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+.DS_Store
+Thumbs.db
+
+# pdf_venv is a separate PDF-processing venv, not part of the project
+pdf_venv/
+
+# Cache
+*.cache
+.pytest_cache/
+.mypy_cache/
