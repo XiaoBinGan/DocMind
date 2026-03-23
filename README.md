@@ -10,7 +10,7 @@
 
 **中文 | [English](README_EN.md)**
 
-> 🧠 **DocMind** — 基于 PageIndex 思想的推理式 RAG 系统，让 AI 像专家一样阅读文档。告别向量相似度，拥抱真正的相关性。
+> 🧠 **DocMind** — 智能文档问答系统，让 AI 像专家一样阅读文档。告别向量相似度，拥抱真正的相关性。
 
 ---
 
@@ -18,7 +18,7 @@
 
 | 特性 | 说明 |
 |------|------|
-| 🔮 **PageIndex 推理式检索** | 不依赖向量相似度，让 LLM 自主遍历索引树推理答案 |
+| 🔮 **推理式检索** | 不依赖向量相似度，让 LLM 自主遍历索引树推理答案 |
 | 📑 **Marker 高质量解析** | PDF → Markdown，保留标题层级、表格、公式、代码块 |
 | 🌳 **智能索引树** | 自动从 Markdown 结构构建 ToC 树，模拟人读文档方式 |
 | 💬 **RAG 对话** | 基于文档内容的精准问答，支持流式输出 |
@@ -42,7 +42,7 @@ graph TB
     subgraph Backend["⚙️ 后端 (FastAPI)"]
         subgraph Pipeline["处理管道"]
             Parser["📄 Parser<br/>(Marker/PyPDF2)"]
-            Indexer["🌳 PageIndexer<br/>(构建索引树)"]
+            Indexer["🌳 Indexer<br/>(索引构建器)"]
             Retriever["🔍 PageRetriever<br/>(推理检索)"]
         end
         
@@ -77,7 +77,7 @@ docmind/
 │   │   │   └── chat.py        # RAG 对话 API
 │   │   ├── services/          # 核心服务 ⭐
 │   │   │   ├── parser.py      # 文档解析 (Marker / PyPDF2)
-│   │   │   ├── indexer.py     # PageIndex 索引构建
+│   │   │   ├── indexer.py     # 索引构建
 │   │   │   └── llm.py         # LLM 调用封装
 │   │   ├── models/             # SQLAlchemy 数据模型
 │   │   └── core/               # 配置管理
@@ -193,7 +193,7 @@ Marker 模型首次运行自动下载（约 3GB，缓存到 `~/Library/Caches/da
 
 ---
 
-## 🧠 PageIndex 原理
+## 🧠 核心原理
 
 ### 传统 RAG 的痛点
 

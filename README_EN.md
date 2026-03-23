@@ -10,7 +10,7 @@
 
 **[中文](README.md) | English**
 
-> 🧠 **DocMind** — A reasoning-based RAG system inspired by PageIndex, enabling AI to read documents like experts. Say goodbye to vector similarity, embrace true relevance.
+> 🧠 **DocMind** — An intelligent document Q&A system, enabling AI to read documents like experts. Say goodbye to vector similarity, embrace true relevance.
 
 ---
 
@@ -18,7 +18,7 @@
 
 | Feature | Description |
 |---------|-------------|
-| 🔮 **PageIndex Reasoning Retrieval** | Independent of vector similarity, LLM autonomously traverses index tree to reason answers |
+| 🔮 **Reasoning Retrieval** | Independent of vector similarity, LLM autonomously traverses index tree to reason answers |
 | 📑 **Marker High-Quality Parsing** | PDF → Markdown, preserving heading hierarchy, tables, formulas, code blocks |
 | 🌳 **Smart Index Tree** | Automatically builds ToC tree from Markdown structure, mimicking human document reading |
 | 💬 **RAG Conversation** | Precise Q&A based on document content, supporting streaming output |
@@ -42,7 +42,7 @@ graph TB
     subgraph Backend["⚙️ Backend (FastAPI)"]
         subgraph Pipeline["Processing Pipeline"]
             Parser["📄 Parser<br/>(Marker/PyPDF2)"]
-            Indexer["🌳 PageIndexer<br/>(Build Index Tree)"]
+            Indexer["🌳 Indexer<br/>(Index Builder)"]
             Retriever["🔍 PageRetriever<br/>(Reasoning Retrieval)"]
         end
         
@@ -77,7 +77,7 @@ docmind/
 │   │   │   └── chat.py        # RAG Chat API
 │   │   ├── services/          # Core Services ⭐
 │   │   │   ├── parser.py      # Document Parsing (Marker / PyPDF2)
-│   │   │   ├── indexer.py     # PageIndex Building
+│   │   │   ├── indexer.py     # Index Building
 │   │   │   └── llm.py         # LLM Service Wrapper
 │   │   ├── models/             # SQLAlchemy Models
 │   │   └── core/               # Configuration
@@ -193,7 +193,7 @@ Marker model auto-downloads on first run (~3GB, cached to `~/Library/Caches/data
 
 ---
 
-## 🧠 PageIndex Principle
+## 🧠 Core Principle
 
 ### Traditional RAG Limitations
 
