@@ -390,6 +390,20 @@
   margin: 0;
 }
 
+.footerGithub {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.footerGithub:hover {
+  color: var(--primary);
+}
+
 @keyframes fadeInUp {
   from {
     opacity: 0;

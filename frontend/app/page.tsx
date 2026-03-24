@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { FileText, MessageSquare, Settings, Sparkles, ChevronRight, Layers } from "lucide-react"
+import { FileText, MessageSquare, Settings, Sparkles, ChevronRight, Layers, Github } from "lucide-react"
 import styles from "./page.module.css"
 
 export default function Home() {
@@ -59,6 +59,15 @@ export default function Home() {
               <Settings size={18} />
               设置
             </Link>
+            <a
+              href="https://github.com/XiaoBinGan/DocMind"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.navLink}
+            >
+              <Github size={18} />
+              GitHub
+            </a>
           </div>
         </div>
       </nav>
@@ -149,6 +158,15 @@ export default function Home() {
       {/* Footer */}
       <footer className={styles.footer}>
         <p>DocMind - Powered by LLM</p>
+        <a
+          href="https://github.com/XiaoBinGan/DocMind"
+          target="_blank"
+          rel="noopener noreferrer"
+          className={styles.footerGithub}
+        >
+          <Github size={16} />
+          XiaoBinGan/DocMind
+        </a>
       </footer>
     </div>
   )
