@@ -18,13 +18,13 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./docmind.db"
     
     # LLM Settings
-    LLM_PROVIDER: Literal["openai", "anthropic", "local", "ollama"] = "openai"
+    LLM_PROVIDER: Literal["openai", "anthropic", "local", "ollama"] = "ollama"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-3-haiku-20240307"
     LOCAL_MODEL_URL: str = "http://localhost:11434/v1"
-    LOCAL_MODEL_NAME: str = "llama3"
+    LOCAL_MODEL_NAME: str = "qwen3.5:9b"
     
     # PageIndex Settings
     MAX_TREE_DEPTH: int = 5

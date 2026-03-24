@@ -123,16 +123,20 @@ cp .env.example .env
 编辑 `.env`：
 
 ```env
-# LLM 提供商 (openai / anthropic / qwen)
-LLM_PROVIDER=openai
+# LLM 提供商 (openai / anthropic / ollama)
+LLM_PROVIDER=ollama
 
-# API Keys
+# OpenAI 配置（如使用 OpenAI）
 OPENAI_API_KEY=sk-your-openai-key
-# ANTHROPIC_API_KEY=sk-ant-your-key
-# DASHSCOPE_API_KEY=your-dashscope-key
+OPENAI_MODEL=gpt-4o-mini
 
-# 模型配置
-MODEL_NAME=gpt-4o-mini
+# Anthropic 配置（如使用 Claude）
+ANTHROPIC_API_KEY=sk-ant-your-key
+ANTHROPIC_MODEL=claude-3-haiku-20240307
+
+# Ollama 本地模型配置（默认）
+LOCAL_MODEL_URL=http://localhost:11434/v1
+LOCAL_MODEL_NAME=qwen3.5:9b
 ```
 
 ### 3. 安装依赖
@@ -178,7 +182,7 @@ npm run dev
 |--------|---------|---------|
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o`, `gpt-4o-mini` |
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-3-5-sonnet` |
-| 通义千问 | `DASHSCOPE_API_KEY` | `qwen-plus`, `qwen-max` |
+| Ollama (本地) | 无需 API Key | `qwen3.5:9b`, `llama3`, `mistral` |
 
 在设置页面可动态切换，无需重启服务。
 
