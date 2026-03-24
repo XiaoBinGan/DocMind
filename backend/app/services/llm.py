@@ -65,7 +65,17 @@ class LLMService:
             if stream:
                 async for chunk in response:
                     if chunk.choices[0].delta.content:
-                        yield chunk.choices[0].delta.content
+                        content = chunk.choices[0].delta.content
+                        # 过滤掉 <think>...</think> 思考过程
+                        if "<think>" in content:
+                            continue
+                        if "</think>" in content:
+                            continue
+                        # 如果内容包含 think 标签，尝试提取标签外的内容
+                        import re
+                        content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+                        if content.strip():
+                            yield content
             else:
                 yield response.choices[0].message.content
     
@@ -75,6 +85,9 @@ class LLMService:
 Always respond with valid JSON in the specified format. Do not include any other text."""
         
         response = await self.generate(system, prompt, stream=False)
-        return response
+        # 过滤掉 <think>...</think> 思考过程
+        import re
+        response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+        return response.strip()
 
 llm_service = LLMService()
