@@ -152,10 +152,16 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     
     # Build prompt
     system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
-Answer questions accurately based on document content. Cite specific pages when providing information."""
+Answer questions accurately based on document content. Cite specific pages when providing information.
+
+When answering questions about classifications, categories, or tables:
+1. Identify the specific classification criteria mentioned in the document
+2. List all categories and their definitions clearly
+3. Reference the exact table or section where this information is found
+4. Explain the relationships between different categories"""
     
     if context:
-        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
+        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context. If the question involves classifications or categories, be specific about the criteria and relationships."
     else:
         user_prompt = f"USER QUESTION: {request.message}"
     

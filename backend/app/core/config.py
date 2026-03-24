@@ -18,18 +18,18 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///./docmind.db"
     
     # LLM Settings
-    LLM_PROVIDER: Literal["openai", "anthropic", "local", "ollama"] = "ollama"
+    LLM_PROVIDER: Literal["openai", "anthropic", "local", "ollama"] = "openai"
     OPENAI_API_KEY: str = ""
     OPENAI_MODEL: str = "gpt-4o-mini"
     ANTHROPIC_API_KEY: str = ""
     ANTHROPIC_MODEL: str = "claude-3-haiku-20240307"
     LOCAL_MODEL_URL: str = "http://localhost:11434/v1"
-    LOCAL_MODEL_NAME: str = "qwen3.5:9b"
+    LOCAL_MODEL_NAME: str = "llama3"
     
     # PageIndex Settings
-    MAX_TREE_DEPTH: int = 5
-    MAX_LEAF_NODES: int = 50
-    CHUNK_SIZE: int = 1000
+    MAX_TREE_DEPTH: int = 3      # 降低层级，让表格更扁平
+    MAX_LEAF_NODES: int = 100    # 增加节点数，捕获更多细节
+    CHUNK_SIZE: int = 500        # 减小块大小，提高精度
     
     class Config:
         env_file = ".env"

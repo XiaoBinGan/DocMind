@@ -114,15 +114,17 @@ class PageIndexer:
             # Truncate very long content
             truncated = content[:4000] if len(content) > 4000 else content
             
-            prompt = f"""Analyze this document page and provide a brief summary.
+            prompt = f"""Analyze this document page and provide a brief summary. Pay special attention to tables, classifications, and structured content.
 
 PAGE CONTENT:
 {truncated}
 
-Respond with JSON only:
+If this page contains tables or classifications, include them in your summary. Respond with JSON only:
 {{
-    "summary": "2-3 sentence summary of the main content",
-    "key_topics": ["topic1", "topic2", "topic3"]
+    "summary": "2-3 sentence summary including any tables/classifications mentioned",
+    "key_topics": ["topic1", "topic2", "topic3"],
+    "has_tables": true/false,
+    "tables_description": "Brief description of any tables or classifications on this page"
 }}"""
             
             try:
