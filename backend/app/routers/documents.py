@@ -86,9 +86,15 @@ async def index_document(doc_id: str):
     from sqlalchemy.ext.asyncio import create_async_engine
     from sqlalchemy.orm import sessionmaker
     from app.services.indexer import page_indexer
+    from app.services.settings_service import settings_service
     
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    
+    # 确保 settings_service 已初始化（后台任务可能在独立上下文中运行）
+    if not settings_service.ready:
+        settings_service.init(async_session)
+        await settings_service.reload()
     
     async with async_session() as session:
         result = await session.execute(select(Document).where(Document.id == doc_id))

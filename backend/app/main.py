@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.models.database import Base
-from app.routers import documents, chat, models
+from app.routers import documents, chat, models, settings as settings_router
 
 # Database setup
 engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
@@ -41,6 +41,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
     await init_db()
+
+    # Initialize settings service with session maker
+    from app.services.settings_service import settings_service
+    settings_service.init(async_session_maker)
+    await settings_service.reload()
+
     yield
     # Shutdown
     await engine.dispose()
@@ -67,6 +73,7 @@ app.add_middleware(
 app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(models.router)
+app.include_router(settings_router.router)
 
 
 @app.get("/")

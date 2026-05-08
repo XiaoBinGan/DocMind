@@ -1,12 +1,32 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback, memo } from "react"
 import { useSearchParams } from "next/navigation"
-import Link from "next/link"
-import { Send, ChevronRight, FileText, MessageSquare, Trash2, Plus, BookOpen, Loader } from "lucide-react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import rehypeHighlight from "rehype-highlight"
+import {
+  Send, ChevronRight, FileText, MessageSquare,
+  Trash2, Plus, BookOpen, Loader, Copy, Check
+} from "lucide-react"
 import { api, Document, Conversation, Message } from "@/lib/api"
 import styles from "./page.module.css"
 
+/* ================================================================
+   Markdown 渲染器
+   ================================================================ */
+const MarkdownContent = memo(({ content, streaming = false }: { content: string; streaming?: boolean }) => (
+  <div className={`${styles.md} ${streaming ? styles.mdStreaming : ""}`}>
+    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+      {content}
+    </ReactMarkdown>
+  </div>
+))
+MarkdownContent.displayName = "MarkdownContent"
+
+/* ================================================================
+   主页面
+   ================================================================ */
 export default function ChatPage() {
   const searchParams = useSearchParams()
   const initialDocId = searchParams.get("doc")
@@ -22,12 +42,12 @@ export default function ChatPage() {
   const [streamContent, setStreamContent] = useState("")
   const [statusText, setStatusText] = useState("")
   const [showDocList, setShowDocList] = useState(false)
-  
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamContentRef = useRef("")
 
-  // Load documents and conversations
   useEffect(() => {
     loadDocuments()
     loadConversations()
@@ -51,7 +71,6 @@ export default function ChatPage() {
     }
   }
 
-  // Load active conversation
   useEffect(() => {
     if (activeConversation) {
       setMessages(activeConversation.messages)
@@ -60,29 +79,40 @@ export default function ChatPage() {
     }
   }, [activeConversation])
 
-  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, streamContent])
 
-  // Handle document selection
   useEffect(() => {
-    if (currentDocId) {
-      loadConversations()
-    }
+    if (currentDocId) loadConversations()
   }, [currentDocId])
+
+  const handleCopy = useCallback(async (msgId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content)
+      setCopiedId(msgId)
+      setTimeout(() => setCopiedId(null), 2000)
+    } catch { /* ignore */ }
+  }, [])
+
+  const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value)
+    const el = e.target
+    el.style.height = "auto"
+    el.style.height = Math.min(el.scrollHeight, 200) + "px"
+  }, [])
 
   const handleSend = async () => {
     if (!input.trim() || loading || streaming) return
 
     const userMessage = input.trim()
     setInput("")
+    if (inputRef.current) inputRef.current.style.height = "auto"
     setLoading(true)
     setStreaming(true)
     setStreamContent("")
     setStatusText("正在连接...")
 
-    // Optimistically add user message
     const tempUserMsg: Message = {
       id: `temp-${Date.now()}`,
       role: "user",
@@ -94,16 +124,19 @@ export default function ChatPage() {
 
     try {
       streamContentRef.current = ""
-      
+
       await api.chatStream(
-        { message: userMessage, conversation_id: activeConversation?.id || undefined, document_id: currentDocId || undefined },
+        {
+          message: userMessage,
+          conversation_id: activeConversation?.id || undefined,
+          document_id: currentDocId || undefined
+        },
         (chunk) => {
           streamContentRef.current += chunk
-          setStreamContent(prev => prev + chunk)
+          setStreamContent(streamContentRef.current)
           setStatusText("正在思考...")
         },
         (messageId, conversationId) => {
-          // Conversation created/updated
           if (!activeConversation && conversationId) {
             setActiveConversation({
               id: conversationId,
@@ -119,7 +152,6 @@ export default function ChatPage() {
         (status) => setStatusText(status)
       )
 
-      // Add completed message
       const assistantMsg: Message = {
         id: `completed-${Date.now()}`,
         role: "assistant",
@@ -127,12 +159,12 @@ export default function ChatPage() {
         references: null,
         created_at: new Date().toISOString()
       }
-      
+
       setMessages(prev => {
         const filtered = prev.filter(m => m.id !== tempUserMsg.id)
         return [...filtered, tempUserMsg, assistantMsg]
       })
-      
+
       loadConversations()
       setStatusText("")
     } catch (error) {
@@ -160,7 +192,7 @@ export default function ChatPage() {
     }
   }
 
-  const handleNewChat = async () => {
+  const handleNewChat = () => {
     setActiveConversation(null)
     setMessages([])
   }
@@ -182,10 +214,9 @@ export default function ChatPage() {
 
   return (
     <div className={styles.container}>
-      {/* Background Effects */}
       <div className={styles.bgGradient} />
-      
-      {/* Sidebar */}
+
+      {/* 侧边栏 */}
       <aside className={styles.sidebar}>
         <div className={styles.sidebarHeader}>
           <h2 className={styles.sidebarTitle}>
@@ -197,22 +228,21 @@ export default function ChatPage() {
           </button>
         </div>
 
-        {/* Document selector */}
         <div className={styles.docSelector}>
-          <button 
-            className={styles.docSelectorBtn}
-            onClick={() => setShowDocList(!showDocList)}
-          >
+          <button className={styles.docSelectorBtn} onClick={() => setShowDocList(!showDocList)}>
             <BookOpen size={16} />
             <span className={styles.docSelectorText}>
               {selectedDoc ? selectedDoc.name : "选择文档（可选）"}
             </span>
-            <ChevronRight size={16} className={`${styles.docSelectorArrow} ${showDocList ? styles.docSelectorArrowOpen : ""}`} />
+            <ChevronRight
+              size={16}
+              className={`${styles.docSelectorArrow} ${showDocList ? styles.docSelectorArrowOpen : ""}`}
+            />
           </button>
-          
+
           {showDocList && (
             <div className={styles.docList}>
-              <button 
+              <button
                 className={`${styles.docListItem} ${!currentDocId ? styles.docListItemActive : ""}`}
                 onClick={() => { setCurrentDocId(null); setShowDocList(false); loadConversations() }}
               >
@@ -236,17 +266,16 @@ export default function ChatPage() {
           )}
         </div>
 
-        {/* Conversations list */}
         <div className={styles.conversationsList}>
           {conversations.map(conv => (
-            <div 
+            <div
               key={conv.id}
               className={`${styles.conversationItem} ${activeConversation?.id === conv.id ? styles.conversationItemActive : ""}`}
               onClick={() => setActiveConversation(conv)}
             >
               <MessageSquare size={14} className={styles.convIcon} />
               <span className={styles.convTitle}>{conv.title}</span>
-              <button 
+              <button
                 className={styles.convDelete}
                 onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id) }}
               >
@@ -260,9 +289,8 @@ export default function ChatPage() {
         </div>
       </aside>
 
-      {/* Main Chat Area */}
+      {/* 主聊天区 */}
       <main className={styles.main}>
-        {/* Current document indicator */}
         {selectedDoc && (
           <div className={styles.docIndicator}>
             <FileText size={14} />
@@ -273,7 +301,6 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Messages */}
         <div className={styles.messages}>
           {!activeConversation && messages.length === 0 ? (
             <div className={styles.welcome}>
@@ -281,41 +308,60 @@ export default function ChatPage() {
                 <MessageSquare size={48} />
               </div>
               <h2>开始对话</h2>
-              <p>
-                {currentDocId 
-                  ? "基于文档内容回答问题" 
-                  : "选择左侧文档，或直接提问"}
-              </p>
+              <p>{currentDocId ? "基于文档内容回答问题" : "选择左侧文档，或直接提问"}</p>
             </div>
           ) : (
             <>
               {messages.map((msg, index) => (
-                <div 
+                <div
                   key={msg.id || index}
                   className={`${styles.message} ${msg.role === "user" ? styles.userMessage : styles.assistantMessage}`}
                 >
-                  <div className={styles.messageBubble}>
-                    {msg.content}
+                  <div className={styles.messageAvatar}>
+                    {msg.role === "user" ? "你" : "AI"}
+                  </div>
+
+                  <div className={styles.messageBody}>
+                    <div className={styles.messageBubble}>
+                      {msg.role === "user" ? (
+                        <p className={styles.userText}>{msg.content}</p>
+                      ) : (
+                        <MarkdownContent content={msg.content} />
+                      )}
+                    </div>
+
                     {msg.references && msg.references.length > 0 && (
                       <div className={styles.references}>
                         <span className={styles.refLabel}>引用：</span>
                         {msg.references.map((ref, i) => (
-                          <span key={i} className={styles.refBadge}>
-                            P{ref.page}
-                          </span>
+                          <span key={i} className={styles.refBadge}>P{ref.page}</span>
                         ))}
+                      </div>
+                    )}
+
+                    {msg.role === "assistant" && (
+                      <div className={styles.messageActions}>
+                        <button
+                          className={styles.actionBtn}
+                          onClick={() => handleCopy(msg.id, msg.content)}
+                          title="复制"
+                        >
+                          {copiedId === msg.id ? <Check size={14} /> : <Copy size={14} />}
+                          <span>{copiedId === msg.id ? "已复制" : "复制"}</span>
+                        </button>
                       </div>
                     )}
                   </div>
                 </div>
               ))}
-              
-              {/* Streaming message */}
+
               {streaming && streamContent && (
                 <div className={`${styles.message} ${styles.assistantMessage}`}>
-                  <div className={styles.messageBubble}>
-                    {streamContent}
-                    <span className={styles.cursor}>|</span>
+                  <div className={styles.messageAvatar}>AI</div>
+                  <div className={styles.messageBody}>
+                    <div className={styles.messageBubble}>
+                      <MarkdownContent content={streamContent} streaming />
+                    </div>
                   </div>
                 </div>
               )}
@@ -324,7 +370,6 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Status indicator */}
         {statusText && (
           <div className={styles.statusBar}>
             <Loader size={14} className={styles.statusSpinner} />
@@ -332,35 +377,28 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Input */}
         <div className={styles.inputArea}>
           <div className={styles.inputWrapper}>
             <textarea
               ref={inputRef}
               className={styles.input}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
               onKeyDown={handleKeyDown}
               placeholder="输入你的问题... (Enter 发送，Shift+Enter 换行)"
               rows={1}
               disabled={loading}
             />
-            <button 
+            <button
               className={styles.sendBtn}
               onClick={handleSend}
               disabled={!input.trim() || loading}
             >
-              {loading ? (
-                <Loader size={20} className={styles.spinning} />
-              ) : (
-                <Send size={20} />
-              )}
+              {loading ? <Loader size={20} className={styles.spinning} /> : <Send size={20} />}
             </button>
           </div>
           <p className={styles.inputHint}>
-            {currentDocId 
-              ? "基于文档内容回答" 
-              : "AI 将根据上下文或通用知识回答"}
+            {currentDocId ? "基于文档内容回答" : "AI 将根据上下文或通用知识回答"}
           </p>
         </div>
       </main>

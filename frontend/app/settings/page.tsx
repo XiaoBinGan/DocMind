@@ -1,48 +1,78 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Settings, Key, Cpu, Save, Check, AlertCircle, RefreshCw } from "lucide-react"
+import { Settings, Key, Cpu, Save, Check, AlertCircle, RefreshCw, Zap } from "lucide-react"
 import styles from "./page.module.css"
 
-type LLMProvider = "openai" | "anthropic" | "local" | "ollama"
+type LLMProvider = "openai" | "anthropic" | "ollama" | "openai_compatible"
 
-interface SettingsState {
-  provider: LLMProvider
-  openaiKey: string
-  openaiModel: string
-  anthropicKey: string
-  anthropicModel: string
-  localUrl: string
-  localModel: string
-  maxDepth: number
-  maxLeafNodes: number
+interface ProviderInfo {
+  id: string
+  name: string
+  description: string
+  defaults: Record<string, string>
+  fields: string[]
 }
 
+interface Preset {
+  name: string
+  base_url: string
+  model: string
+}
+
+const PRESETS: Preset[] = [
+  { name: "DeepSeek", base_url: "https://api.deepseek.com/v1", model: "deepseek-chat" },
+  { name: "智谱 GLM", base_url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
+  { name: "Moonshot", base_url: "https://api.moonshot.cn/v1", model: "moonshot-v1-8k" },
+  { name: "通义千问", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-turbo" },
+  { name: "硅基流动", base_url: "https://api.siliconflow.cn/v1", model: "Qwen/Qwen2.5-7B-Instruct" },
+  { name: "自定义", base_url: "", model: "" },
+]
+
+// Fixed model options for OpenAI & Anthropic
+const OPENAI_MODELS = ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"]
+const ANTHROPIC_MODELS = ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"]
+
 export default function SettingsPage() {
-  const [settings, setSettings] = useState<SettingsState>({
-    provider: "ollama",
-    openaiKey: "",
-    openaiModel: "gpt-4o-mini",
-    anthropicKey: "",
-    anthropicModel: "claude-3-haiku-20240307",
-    localUrl: "http://localhost:11434/v1",
-    localModel: "llama3",
-    maxDepth: 5,
-    maxLeafNodes: 50
-  })
+  const [provider, setProvider] = useState<LLMProvider>("ollama")
+  const [apiKey, setApiKey] = useState("")
+  const [baseUrl, setBaseUrl] = useState("")
+  const [model, setModel] = useState("")
+  const [ollamaModels, setOllamaModels] = useState<string[]>([])
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
-  const [ollamaModels, setOllamaModels] = useState<string[]>([])
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // Load Ollama models on mount or when provider changes
+  // Load settings from backend on mount
+  const loadSettings = useCallback(async () => {
+    try {
+      const resp = await fetch("http://localhost:8000/api/settings")
+      const data = await resp.json()
+      const s = data.settings || {}
+      setProvider((s.llm_provider as LLMProvider) || "ollama")
+      setApiKey(s.llm_api_key || "")
+      setBaseUrl(s.llm_base_url || "")
+      setModel(s.llm_model || "")
+    } catch (e) {
+      console.error("Failed to load settings:", e)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
-    if (settings.provider === "ollama") {
+    loadSettings()
+  }, [loadSettings])
+
+  // Fetch Ollama models when provider is ollama
+  useEffect(() => {
+    if (provider === "ollama" && !loading) {
       fetchOllamaModels()
     }
-  }, [settings.provider])
+  }, [provider, loading])
 
   const fetchOllamaModels = async () => {
     try {
@@ -50,9 +80,8 @@ export default function SettingsPage() {
       const data = await resp.json()
       if (data.models && data.models.length > 0) {
         setOllamaModels(data.models)
-        // Auto-select first model if current not in list
-        if (!data.models.includes(settings.localModel)) {
-          updateSetting("localModel", data.models[0])
+        if (!data.models.includes(model)) {
+          setModel(data.models[0])
         }
       }
     } catch (e) {
@@ -62,67 +91,99 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     try {
-      localStorage.setItem("docmind-settings", JSON.stringify(settings))
-      setSaved(true)
+      setSaved(false)
       setError(null)
+      const resp = await fetch("http://localhost:8000/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            llm_provider: provider,
+            llm_api_key: apiKey,
+            llm_base_url: baseUrl,
+            llm_model: model,
+          },
+        }),
+      })
+      if (!resp.ok) throw new Error("Save failed")
+      setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch (e) {
       setError("保存失败，请重试")
     }
   }
 
-  const updateSetting = <K extends keyof SettingsState>(key: K, value: SettingsState[K]) => {
-    setSettings(prev => ({ ...prev, [key]: value }))
-  }
-
   const handleTestConnection = async () => {
     setTesting(true)
     setTestResult(null)
     try {
-      const resp = await fetch("http://localhost:8000/api/models")
+      // Save first
+      await fetch("http://localhost:8000/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          settings: {
+            llm_provider: provider,
+            llm_api_key: apiKey,
+            llm_base_url: baseUrl,
+            llm_model: model,
+          },
+        }),
+      })
+      const resp = await fetch("http://localhost:8000/api/settings/test", { method: "POST" })
       const data = await resp.json()
-      
-      if (data.error) {
-        setTestResult(`❌ ${data.error}`)
-      } else if (data.models && data.models.length > 0) {
-        setOllamaModels(data.models)
-        setTestResult(`✅ 连接成功！发现 ${data.models.length} 个模型`)
-      } else {
-        setTestResult(`✅ 已连接到 ${data.base_url || data.provider}`)
+      setTestResult({ ok: data.success, msg: data.message })
+      // Refresh Ollama models if applicable
+      if (provider === "ollama") {
+        fetchOllamaModels()
       }
     } catch (e) {
-      setTestResult(`❌ 连接失败: ${e}`)
+      setTestResult({ ok: false, msg: String(e) })
     } finally {
       setTesting(false)
     }
   }
 
-  const providerConfigs = [
-    { id: "openai" as LLMProvider, name: "OpenAI", models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo"] },
-    { id: "anthropic" as LLMProvider, name: "Anthropic", models: ["claude-3-5-sonnet-20241022", "claude-3-opus-20240229", "claude-3-haiku-20240307"] },
-    { id: "ollama" as LLMProvider, name: "Ollama (本地)", models: ollamaModels.length > 0 ? ollamaModels : ["(点击刷新获取)"] }
+  const applyPreset = (preset: Preset) => {
+    setBaseUrl(preset.base_url)
+    setModel(preset.model)
+  }
+
+  const providerCards: { id: LLMProvider; name: string; icon?: string }[] = [
+    { id: "openai", name: "OpenAI" },
+    { id: "anthropic", name: "Anthropic" },
+    { id: "ollama", name: "Ollama (本地)" },
+    { id: "openai_compatible", name: "OpenAI 兼容" },
   ]
+
+  if (loading) {
+    return (
+      <div className={styles.container}>
+        <header className={styles.header}>
+          <div className={styles.headerContent}>
+            <Link href="/" className={styles.backLink}>← 返回</Link>
+            <h1 className={styles.title}><Settings size={24} /> 设置</h1>
+          </div>
+        </header>
+        <main className={styles.main}>
+          <div className={styles.loading}>加载中...</div>
+        </main>
+      </div>
+    )
+  }
 
   return (
     <div className={styles.container}>
-      {/* Background Effects */}
       <div className={styles.bgGradient} />
       <div className={styles.bgGrid} />
 
-      {/* Header */}
       <header className={styles.header}>
         <div className={styles.headerContent}>
-          <Link href="/" className={styles.backLink}>
-            ← 返回
-          </Link>
-          <h1 className={styles.title}>
-            <Settings size={24} />
-            设置
-          </h1>
+          <Link href="/" className={styles.backLink}>← 返回</Link>
+          <h1 className={styles.title}><Settings size={24} /> 设置</h1>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className={styles.main}>
         {/* LLM Provider Section */}
         <section className={styles.section}>
@@ -130,153 +191,169 @@ export default function SettingsPage() {
             <Cpu size={20} />
             <div>
               <h2>语言模型配置</h2>
-              <p>选择并配置您的 LLM 提供商</p>
+              <p>选择并配置您的 LLM 提供商 — 所有配置持久化到数据库，重启不丢失</p>
             </div>
           </div>
 
           <div className={styles.providerCards}>
-            {providerConfigs.map(provider => (
+            {providerCards.map(p => (
               <div
-                key={provider.id}
-                className={`${styles.providerCard} ${settings.provider === provider.id ? styles.providerCardActive : ""}`}
-                onClick={() => updateSetting("provider", provider.id)}
+                key={p.id}
+                className={`${styles.providerCard} ${provider === p.id ? styles.providerCardActive : ""}`}
+                onClick={() => setProvider(p.id)}
               >
                 <div className={styles.providerRadio}>
                   <div className={styles.providerRadioInner} />
                 </div>
                 <div className={styles.providerInfo}>
-                  <h3>{provider.name}</h3>
-                  {settings.provider === provider.id && (
-                    <div className={styles.modelSelectRow}>
-                      <select
-                        className={styles.modelSelect}
-                        value={settings.provider === "ollama" ? settings.localModel : (settings as any)[`${provider.id}Model`] || ""}
-                        onChange={(e) => {
-                          if (provider.id === "ollama") {
-                            updateSetting("localModel", e.target.value)
-                          } else {
-                            updateSetting(`${provider.id}Model` as any, e.target.value)
-                          }
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {provider.models.map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      {provider.id === "ollama" && (
-                        <button
-                          className={styles.refreshBtn}
-                          onClick={(e) => { e.stopPropagation(); fetchOllamaModels() }}
-                          title="刷新模型列表"
-                        >
-                          <RefreshCw size={14} />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  <h3>{p.name}</h3>
                 </div>
               </div>
             ))}
           </div>
         </section>
 
-        {/* API Keys Section */}
+        {/* Provider-specific configuration */}
         <section className={styles.section}>
           <div className={styles.sectionHeader}>
             <Key size={20} />
             <div>
-              <h2>API 密钥 / 连接</h2>
-              <p>配置 API 密钥或本地服务地址</p>
+              <h2>连接配置</h2>
+              <p>
+                {provider === "openai" && "OpenAI 官方 API，需要 API Key"}
+                {provider === "anthropic" && "Anthropic 官方 API，需要 API Key"}
+                {provider === "ollama" && "本地 Ollama 服务，支持自动获取模型列表"}
+                {provider === "openai_compatible" && "任意兼容 OpenAI API 的服务"}
+              </p>
             </div>
           </div>
 
-          <div className={styles.formGroup}>
-            <label className={styles.label}>OpenAI API Key</label>
-            <input
-              type="password"
-              className={styles.input}
-              placeholder="sk-..."
-              value={settings.openaiKey}
-              onChange={(e) => updateSetting("openaiKey", e.target.value)}
-            />
-          </div>
+          {/* API Key — for openai, anthropic, openai_compatible */}
+          {provider !== "ollama" && (
+            <div className={styles.formGroup}>
+              <label className={styles.label}>API 密钥</label>
+              <input
+                type="password"
+                className={styles.input}
+                placeholder={provider === "openai" ? "sk-..." : provider === "anthropic" ? "sk-ant-..." : "输入 API Key"}
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+              />
+            </div>
+          )}
 
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Anthropic API Key</label>
-            <input
-              type="password"
-              className={styles.input}
-              placeholder="sk-ant-..."
-              value={settings.anthropicKey}
-              onChange={(e) => updateSetting("anthropicKey", e.target.value)}
-            />
-          </div>
-
-          <div className={styles.formGroup}>
-            <label className={styles.label}>Ollama / 本地模型 URL</label>
-            <input
-              type="text"
-              className={styles.input}
-              placeholder="http://localhost:11434/v1"
-              value={settings.localUrl}
-              onChange={(e) => updateSetting("localUrl", e.target.value)}
-            />
-            <div className={styles.inputActions}>
-              <button 
-                className={styles.testBtn}
-                onClick={handleTestConnection}
-                disabled={testing}
+          {/* Model selector — for openai / anthropic */}
+          {(provider === "openai" || provider === "anthropic") && (
+            <div className={styles.formGroup}>
+              <label className={styles.label}>模型</label>
+              <select
+                className={styles.input}
+                value={model}
+                onChange={e => setModel(e.target.value)}
               >
-                {testing ? "连接中..." : "🔍 测试连接"}
-              </button>
-              {testResult && (
-                <span className={styles.testResult}>{testResult}</span>
-              )}
+                {(provider === "openai" ? OPENAI_MODELS : ANTHROPIC_MODELS).map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
             </div>
+          )}
+
+          {/* Ollama: URL + model selector + refresh */}
+          {provider === "ollama" && (
+            <>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>Ollama 服务地址</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="http://localhost:11434/v1"
+                  value={baseUrl}
+                  onChange={e => setBaseUrl(e.target.value)}
+                />
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>模型</label>
+                <div className={styles.modelRow}>
+                  <select
+                    className={`${styles.input} ${styles.modelSelect}`}
+                    value={model}
+                    onChange={e => setModel(e.target.value)}
+                  >
+                    {ollamaModels.length > 0
+                      ? ollamaModels.map(m => <option key={m} value={m}>{m}</option>)
+                      : <option value="">(点击刷新获取)</option>
+                    }
+                  </select>
+                  <button className={styles.refreshBtn} onClick={fetchOllamaModels} title="刷新模型列表">
+                    <RefreshCw size={14} />
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* OpenAI compatible: presets + URL + model */}
+          {provider === "openai_compatible" && (
+            <>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>
+                  <Zap size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+                  快速预设
+                </label>
+                <div className={styles.presetGrid}>
+                  {PRESETS.map(p => (
+                    <button
+                      key={p.name}
+                      className={`${styles.presetBtn} ${baseUrl === p.base_url && model === p.model ? styles.presetBtnActive : ""}`}
+                      onClick={() => applyPreset(p)}
+                      type="button"
+                    >
+                      {p.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>Base URL</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="https://api.deepseek.com/v1"
+                  value={baseUrl}
+                  onChange={e => setBaseUrl(e.target.value)}
+                />
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>模型名称</label>
+                <input
+                  type="text"
+                  className={styles.input}
+                  placeholder="deepseek-chat"
+                  value={model}
+                  onChange={e => setModel(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Test connection */}
+          <div className={styles.testArea}>
+            <button
+              className={styles.testBtn}
+              onClick={handleTestConnection}
+              disabled={testing}
+            >
+              {testing ? "测试中..." : "🔍 测试连接"}
+            </button>
+            {testResult && (
+              <div className={testResult.ok ? styles.testSuccess : styles.testError}>
+                {testResult.ok ? "✅" : "❌"} {testResult.msg}
+              </div>
+            )}
           </div>
         </section>
 
-        {/* Index Settings Section */}
-        <section className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <Settings size={20} />
-            <div>
-              <h2>索引参数</h2>
-              <p>配置索引行为</p>
-            </div>
-          </div>
-
-          <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>最大树深度</label>
-              <input
-                type="number"
-                className={styles.input}
-                min={1}
-                max={10}
-                value={settings.maxDepth}
-                onChange={(e) => updateSetting("maxDepth", parseInt(e.target.value) || 5)}
-              />
-              <span className={styles.hint}>索引树的最大层级数</span>
-            </div>
-
-            <div className={styles.formGroup}>
-              <label className={styles.label}>最大叶子节点数</label>
-              <input
-                type="number"
-                className={styles.input}
-                min={10}
-                max={200}
-                value={settings.maxLeafNodes}
-                onChange={(e) => updateSetting("maxLeafNodes", parseInt(e.target.value) || 50)}
-              />
-              <span className={styles.hint}>每个分支的最大节点数</span>
-            </div>
-          </div>
-        </section>
-
-        {/* Save Button */}
+        {/* Save */}
         <div className={styles.actions}>
           {error && (
             <div className={styles.error}>
@@ -287,7 +364,7 @@ export default function SettingsPage() {
           {saved && (
             <div className={styles.success}>
               <Check size={16} />
-              保存成功
+              保存成功（已写入数据库）
             </div>
           )}
           <button className={styles.saveBtn} onClick={handleSave}>

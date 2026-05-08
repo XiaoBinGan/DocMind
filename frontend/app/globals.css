@@ -69,3 +69,100 @@ button {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
 }
+/* ================================================================
+   代码高亮 (替代 highlight.js/styles/github-dark.css)
+   ================================================================ */
+.hljs {
+  color: #c9d1d9;
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: #8b949e;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-type {
+  color: #ff7b72;
+}
+
+.hljs-string,
+.hljs-addition {
+  color: #a5d6ff;
+}
+
+.hljs-number,
+.hljs-literal {
+  color: #79c0ff;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-built_in {
+  color: #d2a8ff;
+}
+
+.hljs-attr,
+.hljs-variable,
+.hljs-template-variable {
+  color: #79c0ff;
+}
+
+.hljs-function {
+  color: #d2a8ff;
+}
+
+.hljs-params {
+  color: #c9d1d9;
+}
+
+.hljs-regexp {
+  color: #a5d6ff;
+}
+
+.hljs-deletion {
+  color: #ffa198;
+  background: rgba(255, 129, 130, 0.1);
+}
+
+.hljs-addition {
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.hljs-symbol,
+.hljs-bullet {
+  color: #ffa657;
+}
+
+.hljs-meta {
+  color: #79c0ff;
+}
+
+.hljs-meta .hljs-keyword {
+  color: #ff7b72;
+}
+
+.hljs-name,
+.hljs-tag {
+  color: #7ee787;
+}
+
+.hljs-attribute {
+  color: #79c0ff;
+}
+
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #7ee787;
+}
+
+.hljs-property {
+  color: #79c0ff;
+}
+
+.hljs-operator {
+  color: #ff7b72;
+}
