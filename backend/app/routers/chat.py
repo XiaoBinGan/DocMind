@@ -134,21 +134,42 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     db.add(user_msg)
     await db.flush()
     
+    # Build conversation history
+    history = ""
+    if conv.messages:
+        recent = conv.messages[-10:]
+        for m in recent:
+            if m.role == "user":
+                history += f"\nUser: {m.content}"
+            else:
+                history += f"\nAssistant: {m.content}"
+    
     # Get document context
     context, references = "", []
     if conv.document_id:
         doc_result = await db.execute(select(Document).where(Document.id == conv.document_id))
         doc = doc_result.scalar_one_or_none()
         
-        if doc and doc.index_tree:
-            parsed = await document_parser.parse(doc.file_path)
-            if parsed.get("success"):
-                retriever = PageRetriever(doc.index_tree, parsed["pages"])
-                retrieved = await retriever.retrieve(request.message, top_k=5)
-                
-                for r in retrieved:
-                    context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
-                    references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+        if doc:
+            doc_info = f"\n[Document Info]\nName: {doc.name}\nPages: {doc.page_count}\nType: {doc.file_type}"
+            
+            if doc.index_tree:
+                parsed = await document_parser.parse(doc.file_path)
+                if parsed.get("success"):
+                    retriever = PageRetriever(doc.index_tree, parsed["pages"])
+                    retrieved = await retriever.retrieve(request.message, top_k=5)
+                    
+                    for r in retrieved:
+                        context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
+                        references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+                    
+                    if not retrieved:
+                        for i, page in enumerate(parsed["pages"][:3]):
+                            context += f"\n\n[Page {i+1}]\n{(page["content"] if isinstance(page, dict) else str(page))[:1500]}"
+                else:
+                    context = doc_info
+            else:
+                context = doc_info
     
     # Build prompt
     system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
@@ -161,7 +182,7 @@ When answering questions about classifications, categories, or tables:
 4. Explain the relationships between different categories"""
     
     if context:
-        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context. If the question involves classifications or categories, be specific about the criteria and relationships."
+        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nCONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context. If the question involves classifications or categories, be specific about the criteria and relationships."
     else:
         user_prompt = f"USER QUESTION: {request.message}"
     
@@ -246,28 +267,54 @@ async def chat_stream(request: ChatRequest):
             
             yield f"event: user_message\ndata: {user_msg.id}\n\n"
             
+            # Build conversation history
+            history = ""
+            if conv.messages:
+                # 只取最近 10 条历史消息
+                recent = conv.messages[-10:]
+                for m in recent:
+                    if m.role == "user":
+                        history += f"\nUser: {m.content}"
+                    else:
+                        history += f"\nAssistant: {m.content}"
+            
             # Get context
             context, references = "", []
             if conv.document_id:
                 doc_result = await session.execute(select(Document).where(Document.id == conv.document_id))
                 doc = doc_result.scalar_one_or_none()
                 
-                if doc and doc.index_tree:
-                    parsed = await document_parser.parse(doc.file_path)
-                    if parsed.get("success"):
-                        retriever = PageRetriever(doc.index_tree, parsed["pages"])
-                        retrieved = await retriever.retrieve(request.message, top_k=5)
-                        
-                        for r in retrieved:
-                            context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
-                            references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+                if doc:
+                    # 把文档基本信息附上
+                    doc_info = f"\n[Document Info]\nName: {doc.name}\nPages: {doc.page_count}\nType: {doc.file_type}"
+                    
+                    if doc.index_tree:
+                        parsed = await document_parser.parse(doc.file_path)
+                        if parsed.get("success"):
+                            retriever = PageRetriever(doc.index_tree, parsed["pages"])
+                            retrieved = await retriever.retrieve(request.message, top_k=5)
+                            
+                            for r in retrieved:
+                                context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
+                                references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+                            
+                            if not retrieved:
+                                # 检索不到内容时，取前 3 页作为 fallback
+                                for i, page in enumerate(parsed["pages"][:3]):
+                                    context += f"\n\n[Page {i+1}]\n{(page["content"] if isinstance(page, dict) else str(page))[:1500]}"
+                        else:
+                            # 解析失败时也附上文档名
+                            context = doc_info
+                    else:
+                        # 没有索引树时也附上文档名
+                        context = doc_info
             
             # Build prompt
             system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
-Answer questions accurately based on document content."""
+Answer questions accurately based on document content. Always respond in the same language the user uses."""
             
             if context:
-                user_prompt = f"DOCUMENT CONTEXT:{context}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
+                user_prompt = f"DOCUMENT CONTEXT:{context}\n\nCONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
             else:
                 user_prompt = f"USER QUESTION: {request.message}"
             
@@ -290,7 +337,8 @@ Answer questions accurately based on document content."""
             conv.updated_at = datetime.utcnow()
             await session.commit()
             
-            yield f"event: done\ndata: {assistant_msg.id}\n\n"
+            import json as _json
+            yield f"event: done\ndata: {assistant_msg.id}\n\nevent: references\ndata: {_json.dumps(references if references else [], ensure_ascii=False)}\n\n"
             yield f"event: conversation_id\ndata: {conversation_id}\n\n"
         
         await engine.dispose()

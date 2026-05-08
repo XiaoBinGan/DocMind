@@ -71,6 +71,7 @@ class LLMService:
             messages=messages,
             stream=stream,
             temperature=0.7,
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
         if stream:
@@ -106,6 +107,7 @@ class LLMService:
                 model=model,
                 messages=[{"role": "user", "content": "Hi"}],
                 max_tokens=5,
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
             return True, f"Connected — model: {model}"
         except Exception as exc:

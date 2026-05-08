@@ -148,7 +148,7 @@ class ApiClient {
   async chatStream(
     request: ChatRequest,
     onChunk: (chunk: string) => void,
-    onDone: (messageId: string, conversationId: string) => void,
+    onDone: (messageId: string, conversationId: string, references: Reference[] | null) => void,
     onStatus?: (status: string) => void
   ): Promise<void> {
     const response = await fetch(`${this.baseUrl}/api/chat/stream`, {
@@ -165,6 +165,7 @@ class ApiClient {
     let currentEvent = ""
     let messageId = ""
     let conversationId = ""
+    let references: Reference[] | null = null
     let doneReceived = false
 
     while (true) {
@@ -186,15 +187,16 @@ class ApiClient {
 
           if (currentEvent === "chunk") {
             onChunk(data)
+          } else if (currentEvent === "references") {
+            try { references = JSON.parse(data) } catch { references = null }
           } else if (currentEvent === "done") {
             messageId = data
             doneReceived = true
             onStatus?.("完成")
           } else if (currentEvent === "conversation_id") {
             conversationId = data
-            // 如果已经收到 done 事件，立即调用 onDone
             if (doneReceived) {
-              onDone(messageId, conversationId)
+              onDone(messageId, conversationId, references)
             }
           }
         }
@@ -212,6 +214,9 @@ class ApiClient {
         const data = finalLines[i].slice(5).trim()
         if (!data) continue
         if (currentEvent === "chunk") onChunk(data)
+        else if (currentEvent === "references") {
+          try { references = JSON.parse(data) } catch { references = null }
+        }
         else if (currentEvent === "done") { 
           messageId = data
           doneReceived = true
@@ -220,14 +225,14 @@ class ApiClient {
         else if (currentEvent === "conversation_id") { 
           conversationId = data
           if (doneReceived) {
-            onDone(messageId, conversationId)
+            onDone(messageId, conversationId, references)
           }
         }
       }
     }
 
     // 确保 onDone 被调用
-    onDone(messageId, conversationId)
+    onDone(messageId, conversationId, references)
   }
 }
 

@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { Settings, Key, Cpu, Save, Check, AlertCircle, RefreshCw, Zap } from "lucide-react"
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 import styles from "./page.module.css"
 
 type LLMProvider = "openai" | "anthropic" | "ollama" | "openai_compatible"
@@ -49,7 +51,7 @@ export default function SettingsPage() {
   // Load settings from backend on mount
   const loadSettings = useCallback(async () => {
     try {
-      const resp = await fetch("http://localhost:8000/api/settings")
+      const resp = await fetch(`${API_BASE}/api/settings`)
       const data = await resp.json()
       const s = data.settings || {}
       setProvider((s.llm_provider as LLMProvider) || "ollama")
@@ -76,7 +78,7 @@ export default function SettingsPage() {
 
   const fetchOllamaModels = async () => {
     try {
-      const resp = await fetch("http://localhost:8000/api/models")
+      const resp = await fetch(`${API_BASE}/api/models`)
       const data = await resp.json()
       if (data.models && data.models.length > 0) {
         setOllamaModels(data.models)
@@ -93,7 +95,7 @@ export default function SettingsPage() {
     try {
       setSaved(false)
       setError(null)
-      const resp = await fetch("http://localhost:8000/api/settings", {
+      const resp = await fetch(`${API_BASE}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -118,7 +120,7 @@ export default function SettingsPage() {
     setTestResult(null)
     try {
       // Save first
-      await fetch("http://localhost:8000/api/settings", {
+      await fetch(`${API_BASE}/api/settings`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,7 +132,7 @@ export default function SettingsPage() {
           },
         }),
       })
-      const resp = await fetch("http://localhost:8000/api/settings/test", { method: "POST" })
+      const resp = await fetch(`${API_BASE}/api/settings/test`, { method: "POST" })
       const data = await resp.json()
       setTestResult({ ok: data.success, msg: data.message })
       // Refresh Ollama models if applicable

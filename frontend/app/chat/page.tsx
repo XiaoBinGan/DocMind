@@ -9,7 +9,7 @@ import {
   Send, ChevronRight, FileText, MessageSquare,
   Trash2, Plus, BookOpen, Loader, Copy, Check
 } from "lucide-react"
-import { api, Document, Conversation, Message } from "@/lib/api"
+import { api, Document, Conversation, Message, Reference } from "@/lib/api"
 import styles from "./page.module.css"
 
 /* ================================================================
@@ -47,6 +47,7 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamContentRef = useRef("")
+  const streamingRefsRef = useRef<Reference[] | null>(null)
 
   useEffect(() => {
     loadDocuments()
@@ -71,17 +72,27 @@ export default function ChatPage() {
     }
   }
 
-  useEffect(() => {
-    if (activeConversation) {
-      setMessages(activeConversation.messages)
-    } else {
-      setMessages([])
-    }
-  }, [activeConversation])
+  const switchConversation = useCallback((conv: Conversation | null) => {
+    setActiveConversation(conv)
+    setMessages(conv?.messages ?? [])
+  }, [])
+
+  // 仅在流式输出中或新增消息时滚动到底部，流结束后不滚动
+  const scrollToBottom = useCallback((smooth = true) => {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" })
+  }, [])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }, [messages, streamContent])
+    if (streamContent) {
+      scrollToBottom()
+    }
+  }, [streamContent, scrollToBottom])
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      scrollToBottom(false)
+    }
+  }, [messages.length, scrollToBottom])
 
   useEffect(() => {
     if (currentDocId) loadConversations()
@@ -124,6 +135,7 @@ export default function ChatPage() {
 
     try {
       streamContentRef.current = ""
+      streamingRefsRef.current = null
 
       await api.chatStream(
         {
@@ -136,9 +148,10 @@ export default function ChatPage() {
           setStreamContent(streamContentRef.current)
           setStatusText("正在思考...")
         },
-        (messageId, conversationId) => {
+        (messageId, conversationId, refs) => {
+          streamingRefsRef.current = refs
           if (!activeConversation && conversationId) {
-            setActiveConversation({
+            switchConversation({
               id: conversationId,
               title: userMessage.slice(0, 50) + "...",
               document_id: currentDocId,
@@ -156,7 +169,7 @@ export default function ChatPage() {
         id: `completed-${Date.now()}`,
         role: "assistant",
         content: streamContentRef.current || "（无回复）",
-        references: null,
+        references: streamingRefsRef.current,
         created_at: new Date().toISOString()
       }
 
@@ -193,8 +206,7 @@ export default function ChatPage() {
   }
 
   const handleNewChat = () => {
-    setActiveConversation(null)
-    setMessages([])
+    switchConversation(null)
   }
 
   const handleDeleteConversation = async (id: string) => {
@@ -202,8 +214,7 @@ export default function ChatPage() {
       await api.deleteConversation(id)
       setConversations(prev => prev.filter(c => c.id !== id))
       if (activeConversation?.id === id) {
-        setActiveConversation(null)
-        setMessages([])
+        switchConversation(null)
       }
     } catch (error) {
       console.error("Delete failed:", error)
@@ -271,7 +282,7 @@ export default function ChatPage() {
             <div
               key={conv.id}
               className={`${styles.conversationItem} ${activeConversation?.id === conv.id ? styles.conversationItemActive : ""}`}
-              onClick={() => setActiveConversation(conv)}
+              onClick={() => switchConversation(conv)}
             >
               <MessageSquare size={14} className={styles.convIcon} />
               <span className={styles.convTitle}>{conv.title}</span>
@@ -330,12 +341,14 @@ export default function ChatPage() {
                       )}
                     </div>
 
-                    {msg.references && msg.references.length > 0 && (
+                    {msg.role === "assistant" && (
                       <div className={styles.references}>
                         <span className={styles.refLabel}>引用：</span>
-                        {msg.references.map((ref, i) => (
-                          <span key={i} className={styles.refBadge}>P{ref.page}</span>
-                        ))}
+                        {msg.references && msg.references.length > 0
+                          ? msg.references.map((ref, i) => (
+                              <span key={i} className={styles.refBadge}>P{ref.page}</span>
+                            ))
+                          : <span className={styles.refNone}>无</span>}
                       </div>
                     )}
 
