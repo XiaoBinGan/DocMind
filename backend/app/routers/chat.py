@@ -240,7 +240,6 @@ async def chat_stream(request: ChatRequest):
             if request.conversation_id:
                 result = await session.execute(
                     select(Conversation).where(Conversation.id == request.conversation_id)
-                    .options(selectinload(Conversation.messages))
                 )
                 conv = result.scalar_one_or_none()
             else:
@@ -267,11 +266,15 @@ async def chat_stream(request: ChatRequest):
             
             yield f"event: user_message\ndata: {user_msg.id}\n\n"
             
-            # Build conversation history
+            # Build conversation history — explicit query to avoid lazy load after commit
             history = ""
-            if conv.messages:
-                # 只取最近 10 条历史消息
-                recent = conv.messages[-10:]
+            if request.conversation_id:
+                hist_result = await session.execute(
+                    select(Message)
+                    .where(Message.conversation_id == conv.id)
+                    .order_by(Message.created_at.asc())
+                )
+                recent = hist_result.scalars().all()[-10:]
                 for m in recent:
                     if m.role == "user":
                         history += f"\nUser: {m.content}"
