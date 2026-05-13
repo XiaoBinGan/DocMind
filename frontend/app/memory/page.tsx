@@ -5,7 +5,8 @@ import { api, Memory, MemoryStats } from "@/lib/api"
 import Nav from "@/components/nav"
 import {
   Plus, Trash2, Archive, Search, Tag, Brain,
-  Star, BookOpen, Lightbulb, Heart, Filter
+  Star, BookOpen, Lightbulb, Heart, Filter,
+  Sparkles, MessageSquare, Zap, ChevronDown, ChevronUp
 } from "lucide-react"
 import styles from "./page.module.css"
 
@@ -45,6 +46,7 @@ export default function MemoryPage() {
   const [formCategory, setFormCategory] = useState("daily")
   const [formTags, setFormTags] = useState("")
   const [submitting, setSubmitting] = useState(false)
+  const [showTips, setShowTips] = useState(true)
 
   const loadMemories = useCallback(async () => {
     try {
@@ -125,6 +127,63 @@ export default function MemoryPage() {
           <button className={styles.addBtn} onClick={() => setShowForm(!showForm)}>
             <Plus size={16} /> 新增记忆
           </button>
+        </div>
+
+        <div className={styles.tipsSection}>
+          <div
+            className={styles.tipsHeader}
+            onClick={() => setShowTips(!showTips)}
+          >
+            <div className={styles.tipsHeaderLeft}>
+              <Sparkles size={16} />
+              <span>记忆使用指南</span>
+            </div>
+            {showTips ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </div>
+          {showTips && (
+            <div className={styles.tipsContent}>
+              <div className={styles.tipsGrid}>
+                <div className={styles.tipCard}>
+                  <div className={styles.tipIcon}><Brain size={20} /></div>
+                  <h3>什么是记忆？</h3>
+                  <p>记忆是 AI 对话的持久化知识库。记录重要信息后，AI 在后续对话中会自动检索相关记忆，实现个性化回答。</p>
+                </div>
+                <div className={styles.tipCard}>
+                  <div className={styles.tipIcon}><Zap size={20} /></div>
+                  <h3>记录什么？</h3>
+                  <p>用户偏好、重要决策、项目背景、关键结论、常用术语——任何 AI 再次对话时需要知道的上下文。</p>
+                </div>
+                <div className={styles.tipCard}>
+                  <div className={styles.tipIcon}><MessageSquare size={20} /></div>
+                  <h3>对话即记录</h3>
+                  <p>聊天时对 AI 说"记住这个"，系统会自动提取关键信息并存入记忆库，无需手动创建。</p>
+                </div>
+                <div className={styles.tipCard}>
+                  <div className={styles.tipIcon}><Filter size={20} /></div>
+                  <h3>分类与标签</h3>
+                  <p>5 大分类自动归档：日常、长期记忆、偏好、决策、经验。加上自定义标签，快速检索不迷路。</p>
+                </div>
+              </div>
+              <div className={styles.tipsActions}>
+                <div className={styles.tipAction}>
+                  <span className={styles.tipActionEmoji}>💡</span>
+                  <span>试试对 AI 说：<strong>"记住我喜欢简洁的技术文档"</strong></span>
+                </div>
+                <div className={styles.tipAction}>
+                  <span className={styles.tipActionEmoji}>🏷️</span>
+                  <span>标签可以按主题组织记忆，例如：<strong>项目名、人名、技术栈</strong></span>
+                </div>
+                <div className={styles.tipAction}>
+                  <span className={styles.tipActionEmoji}>📦</span>
+                  <span>不再需要的记忆可以<strong>归档</strong>而非删除，随时可以恢复</span>
+                </div>
+                <div className={styles.tipAction}>
+                  <span className={styles.tipActionEmoji}>🔍</span>
+                  <span>搜索支持全文匹配，输入关键词即可找到相关记忆</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {showForm && (
@@ -215,7 +274,11 @@ export default function MemoryPage() {
         ) : memories.length === 0 ? (
           <div className={styles.empty}>
             <Brain size={48} className={styles.emptyIcon} />
-            <p>{showArchived ? "没有归档的记忆" : "还没有记忆，点击上方按钮创建"}</p>
+            <p className={styles.emptyTitle}>还没有记忆</p>
+            <p className={styles.emptyDesc}>记录偏好、决策和重要信息，AI 对话时会自动引用</p>
+            <button className={styles.emptyBtn} onClick={() => { setShowForm(true); setShowTips(false) }}>
+              <Plus size={14} /> 创建第一条记忆
+            </button>
           </div>
         ) : (
           <div className={styles.list}>

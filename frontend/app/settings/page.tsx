@@ -48,6 +48,12 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null)
   const [loading, setLoading] = useState(true)
+  const [indexSettings, setIndexSettings] = useState({
+    maxDepth: 5,
+    maxLeafNodes: 50,
+    topK: 5,
+    contextTruncate: 1500,
+  })
 
   // Load settings from backend on mount
   const loadSettings = useCallback(async () => {
@@ -59,6 +65,13 @@ export default function SettingsPage() {
       setApiKey(s.llm_api_key || "")
       setBaseUrl(s.llm_base_url || "")
       setModel(s.llm_model || "")
+      // Load index settings
+      setIndexSettings({
+        maxDepth: parseInt(s.index_max_depth) || 5,
+        maxLeafNodes: parseInt(s.index_max_leaf_nodes) || 50,
+        topK: parseInt(s.index_top_k) || 5,
+        contextTruncate: parseInt(s.index_context_truncate) || 1500,
+      })
     } catch (e) {
       console.error("Failed to load settings:", e)
     } finally {
@@ -92,6 +105,10 @@ export default function SettingsPage() {
     }
   }
 
+  const updateIndexSetting = (key: string, value: number) => {
+    setIndexSettings(prev => ({ ...prev, [key]: value }))
+  }
+
   const handleSave = async () => {
     try {
       setSaved(false)
@@ -105,6 +122,10 @@ export default function SettingsPage() {
             llm_api_key: apiKey,
             llm_base_url: baseUrl,
             llm_model: model,
+            index_max_depth: String(indexSettings.maxDepth),
+            index_max_leaf_nodes: String(indexSettings.maxLeafNodes),
+            index_top_k: String(indexSettings.topK),
+            index_context_truncate: String(indexSettings.contextTruncate),
           },
         }),
       })
@@ -130,6 +151,10 @@ export default function SettingsPage() {
             llm_api_key: apiKey,
             llm_base_url: baseUrl,
             llm_model: model,
+            index_max_depth: String(indexSettings.maxDepth),
+            index_max_leaf_nodes: String(indexSettings.maxLeafNodes),
+            index_top_k: String(indexSettings.topK),
+            index_context_truncate: String(indexSettings.contextTruncate),
           },
         }),
       })
@@ -354,6 +379,74 @@ export default function SettingsPage() {
                 {testResult.ok ? "✅" : "❌"} {testResult.msg}
               </div>
             )}
+          </div>
+        </section>
+
+        {/* Index Settings Section */}
+        <section className={styles.section}>
+          <div className={styles.sectionHeader}>
+            <Settings size={20} />
+            <div>
+              <h2>索引参数</h2>
+              <p>配置文档索引树的行为</p>
+            </div>
+          </div>
+
+          <div className={styles.formRow}>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>最大树深度</label>
+              <input
+                type="number"
+                className={styles.input}
+                min={1}
+                max={10}
+                value={indexSettings.maxDepth}
+                onChange={(e) => updateIndexSetting("maxDepth", parseInt(e.target.value) || 5)}
+              />
+              <span className={styles.hint}>索引树的最大层级数</span>
+            </div>
+
+            <div className={styles.formGroup}>
+              <label className={styles.label}>最大叶子节点数</label>
+              <input
+                type="number"
+                className={styles.input}
+                min={10}
+                max={200}
+                value={indexSettings.maxLeafNodes}
+                onChange={(e) => updateIndexSetting("maxLeafNodes", parseInt(e.target.value) || 50)}
+              />
+              <span className={styles.hint}>每个分支的最大节点数</span>
+            </div>
+          </div>
+
+          <div className={styles.formRow}>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>检索 Top-K</label>
+              <input
+                type="number"
+                className={styles.input}
+                min={1}
+                max={20}
+                value={indexSettings.topK}
+                onChange={(e) => updateIndexSetting("topK", parseInt(e.target.value) || 5)}
+              />
+              <span className={styles.hint}>每次检索返回的最大文档页数</span>
+            </div>
+
+            <div className={styles.formGroup}>
+              <label className={styles.label}>上下文截断长度</label>
+              <input
+                type="number"
+                className={styles.input}
+                min={500}
+                max={5000}
+                step={100}
+                value={indexSettings.contextTruncate}
+                onChange={(e) => updateIndexSetting("contextTruncate", parseInt(e.target.value) || 1500)}
+              />
+              <span className={styles.hint}>每页内容最大字符数</span>
+            </div>
           </div>
         </section>
 
