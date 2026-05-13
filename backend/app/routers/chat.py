@@ -171,6 +171,39 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             else:
                 context = doc_info
     
+    # ── Intent analysis + doc matching ──
+    intent_result = None
+    try:
+        from app.services.intent_service import analyze_intent
+        intent_result = await analyze_intent(request.message)
+    except Exception as exc:
+        import logging; logging.getLogger(__name__).warning("Intent analysis failed: %s", exc)
+
+    # Auto-select document if none specified
+    if not conv.document_id and intent_result and intent_result.intent_type in ("doc_query", "doc_comparison"):
+        try:
+            from app.services.doc_matcher import match_documents
+            matches = await match_documents(request.message, intent_result.keywords, db)
+            if matches:
+                best = matches[0]
+                conv.document_id = best.document_id
+                await db.flush()
+                # Build context for matched document
+                from app.services.indexer import PageRetriever
+                from app.services.parser import document_parser
+                doc_result = await db.execute(select(Document).where(Document.id == best.document_id))
+                doc = doc_result.scalar_one_or_none()
+                if doc and doc.index_tree:
+                    parsed = await document_parser.parse(doc.file_path)
+                    if parsed.get("success"):
+                        retriever = PageRetriever(doc.index_tree, parsed["pages"])
+                        retrieved = await retriever.retrieve(request.message, top_k=5)
+                        for r in retrieved:
+                            context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
+                            references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+        except Exception as exc:
+            import logging; logging.getLogger(__name__).warning("Doc matching failed: %s", exc)
+
     # Build prompt
     system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
 Answer questions accurately based on document content. Cite specific pages when providing information.
@@ -312,6 +345,39 @@ async def chat_stream(request: ChatRequest):
                         # 没有索引树时也附上文档名
                         context = doc_info
             
+            # ── Intent analysis + doc matching ──
+            intent_result = None
+            try:
+                from app.services.intent_service import analyze_intent
+                intent_result = await analyze_intent(request.message)
+            except Exception as exc:
+                import logging as _log; _log.getLogger(__name__).warning("Intent analysis failed: %s", exc)
+
+            # Auto-select document if none specified
+            if not conv.document_id and intent_result and intent_result.intent_type in ("doc_query", "doc_comparison"):
+                try:
+                    from app.services.doc_matcher import match_documents
+                    matches = await match_documents(request.message, intent_result.keywords, session)
+                    if matches:
+                        best = matches[0]
+                        conv.document_id = best.document_id
+                        await session.commit()
+                        # Build context for matched document
+                        from app.services.indexer import PageRetriever
+                        from app.services.parser import document_parser
+                        doc_result = await session.execute(select(Document).where(Document.id == best.document_id))
+                        doc = doc_result.scalar_one_or_none()
+                        if doc and doc.index_tree:
+                            parsed = await document_parser.parse(doc.file_path)
+                            if parsed.get("success"):
+                                retriever = PageRetriever(doc.index_tree, parsed["pages"])
+                                retrieved = await retriever.retrieve(request.message, top_k=5)
+                                for r in retrieved:
+                                    context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
+                                    references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+                except Exception as exc:
+                    import logging as _log; _log.getLogger(__name__).warning("Doc matching failed: %s", exc)
+
             # Build prompt
             system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
 Answer questions accurately based on document content. Always respond in the same language the user uses."""

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { FileText, MessageSquare, Settings, Sparkles, ChevronRight, Layers, Github } from "lucide-react"
+import { FileText, MessageSquare, Sparkles, ChevronRight, Layers, Github, LogIn } from "lucide-react"
 import styles from "./page.module.css"
 
 export default function Home() {
@@ -47,17 +47,13 @@ export default function Home() {
             <span className={styles.logoText}>DocMind</span>
           </div>
           <div className={styles.navLinks}>
-            <Link href="/documents" className={styles.navLink}>
-              <FileText size={18} />
-              文档
-            </Link>
             <Link href="/chat" className={styles.navLink}>
               <MessageSquare size={18} />
               对话
             </Link>
-            <Link href="/settings" className={styles.navLink}>
-              <Settings size={18} />
-              设置
+            <Link href="/documents" className={styles.navLink}>
+              <FileText size={18} />
+              文档
             </Link>
             <a
               href="https://github.com/XiaoBinGan/DocMind"
@@ -68,6 +64,10 @@ export default function Home() {
               <Github size={18} />
               GitHub
             </a>
+            <Link href="/login" className={styles.navLogin}>
+              <LogIn size={18} />
+              登录
+            </Link>
           </div>
         </div>
       </nav>

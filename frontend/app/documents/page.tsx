@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react"
 import Link from "next/link"
+import Nav from "@/components/nav"
 import { FileText, Upload, Trash2, RefreshCw, ChevronRight, Layers, X, CheckCircle, AlertCircle, Clock } from "lucide-react"
 import { api, Document } from "@/lib/api"
 import styles from "./page.module.css"
@@ -118,6 +119,7 @@ export default function DocumentsPage() {
 
   return (
     <div className={styles.container}>
+      <Nav />
       {/* Background Effects */}
       <div className={styles.bgGradient} />
       <div className={styles.bgGrid} />

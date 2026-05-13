@@ -10,6 +10,7 @@ import {
   Trash2, Plus, BookOpen, Loader, Copy, Check
 } from "lucide-react"
 import { api, Document, Conversation, Message, Reference } from "@/lib/api"
+import Nav from "@/components/nav"
 import styles from "./page.module.css"
 
 /* ================================================================
@@ -225,6 +226,8 @@ export default function ChatPage() {
 
   return (
     <div className={styles.container}>
+      <Nav />
+      <div className={styles.body}>
       <div className={styles.bgGradient} />
 
       {/* 侧边栏 */}
@@ -415,6 +418,7 @@ export default function ChatPage() {
           </p>
         </div>
       </main>
+      </div>
     </div>
   )
 }

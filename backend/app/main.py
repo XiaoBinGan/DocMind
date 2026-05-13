@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.models.database import Base
-from app.routers import documents, chat, models, settings as settings_router, auth
+from app.routers import documents, chat, models, settings as settings_router, auth, memories
 
 # Database setup
 engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
@@ -79,6 +79,7 @@ app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(models.router)
 app.include_router(settings_router.router)
+app.include_router(memories.router)
 
 
 @app.get("/")

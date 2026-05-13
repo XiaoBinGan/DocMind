@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import AuthWrapper from '@/components/auth-wrapper'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -19,9 +20,11 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <div className="min-h-screen bg-[var(--bg-primary)]">
-          {children}
-        </div>
+        <AuthWrapper>
+          <div className="min-h-screen bg-[var(--bg-primary)]">
+            {children}
+          </div>
+        </AuthWrapper>
       </body>
     </html>
   )

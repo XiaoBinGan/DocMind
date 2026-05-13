@@ -53,6 +53,33 @@ export interface ChatRequest {
   stream?: boolean
 }
 
+// ── Memory types ──
+export interface Memory {
+  id: string
+  user_id: string
+  category: "daily" | "long_term" | "preference" | "decision" | "lesson"
+  content: string
+  source: string | null
+  source_id: string | null
+  tags: string[] | null
+  importance: number
+  is_archived: number
+  created_at: string
+  updated_at: string
+}
+
+export interface MemoryStats {
+  total: number
+  by_category: Record<string, number>
+  archived: number
+  active: number
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("docmind_token") : null
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 class ApiClient {
   private baseUrl: string
 
@@ -64,6 +91,7 @@ class ApiClient {
     const response = await fetch(`${this.baseUrl}${path}`, {
       ...options,
       headers: {
+        ...getAuthHeaders(),
         ...options?.headers,
       },
     })
@@ -80,6 +108,7 @@ class ApiClient {
   async uploadDocument(file: File, onProgress?: (progress: number) => void): Promise<Document> {
     const formData = new FormData()
     formData.append("file", file)
+    const token = typeof window !== "undefined" ? localStorage.getItem("docmind_token") : null
 
     const xhr = new XMLHttpRequest()
     
@@ -101,6 +130,7 @@ class ApiClient {
       xhr.addEventListener("error", () => reject(new Error("Upload failed")))
       
       xhr.open("POST", `${this.baseUrl}/api/documents/upload`)
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`)
       xhr.send(formData)
     })
   }
@@ -153,7 +183,10 @@ class ApiClient {
   ): Promise<void> {
     const response = await fetch(`${this.baseUrl}/api/chat/stream`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
       body: JSON.stringify({ ...request, stream: true }),
     })
 
@@ -233,6 +266,60 @@ class ApiClient {
 
     // 确保 onDone 被调用
     onDone(messageId, conversationId, references)
+  }
+
+  // ── Memories API ──
+  async getMemoryStats(): Promise<MemoryStats> {
+    return this.request("/api/memories/stats")
+  }
+
+  async listMemories(params?: {
+    category?: string
+    is_archived?: number
+    search?: string
+    page?: number
+    page_size?: number
+  }): Promise<{ memories: Memory[]; total: number }> {
+    const sp = new URLSearchParams()
+    if (params?.category) sp.set("category", params.category)
+    if (params?.is_archived !== undefined) sp.set("is_archived", String(params.is_archived))
+    if (params?.search) sp.set("search", params.search)
+    if (params?.page) sp.set("page", String(params.page))
+    if (params?.page_size) sp.set("page_size", String(params.page_size))
+    const qs = sp.toString()
+    return this.request(`/api/memories${qs ? `?${qs}` : ""}`)
+  }
+
+  async createMemory(data: {
+    content: string
+    category?: string
+    source?: string
+    tags?: string[]
+    importance?: number
+  }): Promise<Memory> {
+    return this.request("/api/memories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+  }
+
+  async updateMemory(id: string, data: {
+    content?: string
+    category?: string
+    tags?: string[]
+    importance?: number
+    is_archived?: number
+  }): Promise<Memory> {
+    return this.request(`/api/memories/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+  }
+
+  async deleteMemory(id: string): Promise<void> {
+    await this.request(`/api/memories/${id}`, { method: "DELETE" })
   }
 }
 

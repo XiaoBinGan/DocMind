@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
+import Nav from "@/components/nav"
 import { Settings, Key, Cpu, Save, Check, AlertCircle, RefreshCw, Zap } from "lucide-react"
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
@@ -176,6 +177,7 @@ export default function SettingsPage() {
 
   return (
     <div className={styles.container}>
+      <Nav />
       <div className={styles.bgGradient} />
       <div className={styles.bgGrid} />
 
