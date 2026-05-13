@@ -198,6 +198,8 @@ class DocumentParser:
             from PyPDF2 import PdfReader
             
             reader = PdfReader(file_path)
+            if reader.is_encrypted:
+                reader.decrypt('')
             pages = []
             
             for i, page in enumerate(reader.pages):

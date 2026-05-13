@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.models.database import Base
-from app.routers import documents, chat, models, settings as settings_router
+from app.routers import documents, chat, models, settings as settings_router, auth
 
 # Database setup
 engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
@@ -47,6 +47,10 @@ async def lifespan(app: FastAPI):
     settings_service.init(async_session_maker)
     await settings_service.reload()
 
+    # Ensure default admin user exists
+    from app.services.auth_service import ensure_default_admin
+    await ensure_default_admin()
+
     yield
     # Shutdown
     await engine.dispose()
@@ -70,6 +74,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router)
 app.include_router(documents.router)
 app.include_router(chat.router)
 app.include_router(models.router)
