@@ -12,6 +12,7 @@ from app.models.schemas import (
     ConversationResponse, ConversationListResponse,
     ChatRequest, ChatResponse, MessageResponse
 )
+from app.services.intent_service import IntentResult
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -31,11 +32,16 @@ async def get_db():
 
 
 @router.get("/conversations", response_model=ConversationListResponse)
-async def list_conversations(document_id: Optional[str] = None, db: AsyncSession = Depends(get_db)):
-    """List all conversations."""
+async def list_conversations(document_id: Optional[str] = None, chat_type: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """List all conversations, optionally filtered by document_id or chat_type."""
     query = select(Conversation).order_by(Conversation.updated_at.desc())
     if document_id:
         query = query.where(Conversation.document_id == document_id)
+    if chat_type:
+        if chat_type == "general":
+            query = query.where(Conversation.chat_type == "general")
+        elif chat_type == "doc_chat":
+            query = query.where(Conversation.chat_type == "doc_chat")
     
     result = await db.execute(query.options(selectinload(Conversation.messages)))
     convs = result.scalars().all()
@@ -45,6 +51,8 @@ async def list_conversations(document_id: Optional[str] = None, db: AsyncSession
             ConversationResponse(
                 id=c.id,
                 title=c.title,
+                user_id=c.user_id,
+                chat_type=c.chat_type,
                 document_id=c.document_id,
                 messages=[
                     MessageResponse(id=m.id, role=m.role, content=m.content,
@@ -74,6 +82,8 @@ async def get_conversation(conv_id: str, db: AsyncSession = Depends(get_db)):
     return ConversationResponse(
         id=conv.id,
         title=conv.title,
+        user_id=conv.user_id,
+        chat_type=conv.chat_type,
         document_id=conv.document_id,
         messages=[
             MessageResponse(id=m.id, role=m.role, content=m.content,
@@ -116,10 +126,18 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
     else:
+        # Get default user for conversation ownership
+        from app.models.database import User as _U
+        default_user = await db.execute(select(_U).limit(1))
+        default_user_id = default_user.scalar_one_or_none()
+        _uid = default_user_id.id if default_user_id else None
+
         conv = Conversation(
             id=str(uuid.uuid4()),
             title=request.message[:50] + "..." if len(request.message) > 50 else request.message,
-            document_id=request.document_id
+            user_id=_uid,
+            document_id=request.document_id,
+            chat_type=request.chat_type or ("doc_chat" if request.document_id else "general")
         )
         db.add(conv)
         await db.flush()
@@ -268,7 +286,8 @@ async def chat_stream(request: ChatRequest):
         engine = create_async_engine(settings.DATABASE_URL, echo=False)
         async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         
-        async with async_session() as session:
+        try:
+         async with async_session() as session:
             # Get or create conversation
             if request.conversation_id:
                 result = await session.execute(
@@ -276,15 +295,23 @@ async def chat_stream(request: ChatRequest):
                 )
                 conv = result.scalar_one_or_none()
             else:
+                # Get default user for conversation ownership
+                from app.models.database import User as _U
+                default_user = await session.execute(select(_U).limit(1))
+                default_user_id = default_user.scalar_one_or_none()
+                _uid = default_user_id.id if default_user_id else None
+
                 conv = Conversation(
                     id=str(uuid.uuid4()),
                     title=request.message[:50] + "...",
-                    document_id=request.document_id
+                    user_id=_uid,
+                    document_id=request.document_id,
+                    chat_type=request.chat_type or ("doc_chat" if request.document_id else "general")
                 )
                 session.add(conv)
                 await session.commit()
                 await session.flush()
-            
+
             conversation_id = conv.id
             
             # Save user message
@@ -348,8 +375,30 @@ async def chat_stream(request: ChatRequest):
             # ── Intent analysis + doc matching ──
             intent_result = None
             try:
-                from app.services.intent_service import analyze_intent
-                intent_result = await analyze_intent(request.message)
+                from app.services.intent_service import analyze_intent, _quick_classify, extract_keywords
+                # Fast classification first (no LLM needed) for immediate UI feedback
+                quick = _quick_classify(request.message)
+                try:
+                    kw = extract_keywords(request.message)
+                except Exception:
+                    kw = []
+                intent_result = IntentResult(
+                    intent_type=quick or "general_chat",
+                    confidence=0.9 if quick else 0.3,
+                    keywords=kw,
+                    reasoning="quick heuristic",
+                )
+                # Send intent immediately so frontend can show it right away
+                import json as _json
+                yield f"event: intent\ndata: {_json.dumps(intent_result.to_dict(), ensure_ascii=False)}\n\n"
+                
+                # Then try LLM-based refinement
+                try:
+                    intent_result = await analyze_intent(request.message)
+                    # Send refined intent to update frontend
+                    yield f"event: intent\ndata: {_json.dumps(intent_result.to_dict(), ensure_ascii=False)}\n\n"
+                except Exception as exc:
+                    import logging as _log; _log.getLogger(__name__).warning("LLM intent refinement failed: %s", exc)
             except Exception as exc:
                 import logging as _log; _log.getLogger(__name__).warning("Intent analysis failed: %s", exc)
 
@@ -389,10 +438,17 @@ Answer questions accurately based on document content. Always respond in the sam
             
             # Stream response
             full_response = ""
-            async for chunk in llm_service.generate(system_prompt, user_prompt, stream=True):
-                full_response += chunk
-                yield f"event: chunk\ndata: {chunk}\n\n"
-                await asyncio.sleep(0)
+            try:
+                async for chunk in llm_service.generate(system_prompt, user_prompt, stream=True):
+                    full_response += chunk
+                    yield f"event: chunk\ndata: {chunk}\n\n"
+                    await asyncio.sleep(0)
+            except Exception as stream_exc:
+                import logging as _ll
+                _ll.getLogger(__name__).error("LLM stream error: %s", stream_exc, exc_info=True)
+                if not full_response:
+                    full_response = f"[LLM 错误: {stream_exc}]"
+                yield f"event: error\ndata: {stream_exc}\n\n"
             
             # Save final message
             assistant_msg = Message(
@@ -409,8 +465,12 @@ Answer questions accurately based on document content. Always respond in the sam
             import json as _json
             yield f"event: done\ndata: {assistant_msg.id}\n\nevent: references\ndata: {_json.dumps(references if references else [], ensure_ascii=False)}\n\n"
             yield f"event: conversation_id\ndata: {conversation_id}\n\n"
-        
-        await engine.dispose()
+        except Exception as gen_exc:
+            import logging as _ll
+            _ll.getLogger(__name__).error("Stream generator error: %s", gen_exc, exc_info=True)
+            yield f"event: error\ndata: {gen_exc}\n\n"
+        finally:
+            await engine.dispose()
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 

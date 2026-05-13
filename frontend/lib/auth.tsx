@@ -36,7 +36,7 @@ export function useAuth() {
   return ctx
 }
 
-const PUBLIC_PATHS = ["/login", "/register", "/"]
+const PUBLIC_PATHS = ["/login", "/register"]
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (loading) return
     if (!token && !PUBLIC_PATHS.includes(pathname)) {
       router.replace("/login")
-    } else if (token && pathname === "/login" || token && pathname === "/register") {
+    } else if (token && (pathname === "/login" || pathname === "/register" || pathname === "/")) {
       router.replace("/chat")
     }
   }, [token, loading, pathname, router])

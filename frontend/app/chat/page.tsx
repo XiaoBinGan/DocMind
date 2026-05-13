@@ -6,16 +6,24 @@ import ReactMarkdown from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import {
-  Send, ChevronRight, FileText, MessageSquare,
+  Send, FileText, MessageSquare,
   Trash2, Plus, BookOpen, Loader, Copy, Check
 } from "lucide-react"
-import { api, Document, Conversation, Message, Reference } from "@/lib/api"
+import { api, Document, Conversation, Message, Reference, IntentResult } from "@/lib/api"
 import Nav from "@/components/nav"
 import styles from "./page.module.css"
 
 /* ================================================================
    Markdown 渲染器
    ================================================================ */
+
+const INTENT_LABELS: Record<string, { label: string; color: string }> = {
+  doc_query: { label: "文档查询", color: "#00c9ff" },
+  general_chat: { label: "通用对话", color: "#10b981" },
+  doc_comparison: { label: "文档对比", color: "#f59e0b" },
+  ambiguous: { label: "待定", color: "#8b5cf6" },
+}
+
 const MarkdownContent = memo(({ content, streaming = false }: { content: string; streaming?: boolean }) => (
   <div className={`${styles.md} ${streaming ? styles.mdStreaming : ""}`}>
     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
@@ -44,6 +52,8 @@ export default function ChatPage() {
   const [statusText, setStatusText] = useState("")
   const [showDocList, setShowDocList] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [lastIntent, setLastIntent] = useState<IntentResult | null>(null)
+  const [chatMode, setChatMode] = useState<"general" | "doc_chat">("general")
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -66,8 +76,16 @@ export default function ChatPage() {
 
   const loadConversations = async () => {
     try {
-      const result = await api.listConversations(currentDocId || undefined)
-      setConversations(result.conversations)
+      if (chatMode === "general") {
+        const result = await api.listConversations(undefined, "general")
+        setConversations(result.conversations)
+      } else if (currentDocId) {
+        const result = await api.listConversations(currentDocId)
+        setConversations(result.conversations)
+      } else {
+        const result = await api.listConversations(undefined, "doc_chat")
+        setConversations(result.conversations)
+      }
     } catch (error) {
       console.error("Failed to load conversations:", error)
     }
@@ -76,6 +94,8 @@ export default function ChatPage() {
   const switchConversation = useCallback((conv: Conversation | null) => {
     setActiveConversation(conv)
     setMessages(conv?.messages ?? [])
+    setLastIntent(null)
+    setStreamContent("")
   }, [])
 
   // 仅在流式输出中或新增消息时滚动到底部，流结束后不滚动
@@ -98,6 +118,10 @@ export default function ChatPage() {
   useEffect(() => {
     if (currentDocId) loadConversations()
   }, [currentDocId])
+
+  useEffect(() => {
+    loadConversations()
+  }, [chatMode])
 
   const handleCopy = useCallback(async (msgId: string, content: string) => {
     try {
@@ -124,6 +148,7 @@ export default function ChatPage() {
     setStreaming(true)
     setStreamContent("")
     setStatusText("正在连接...")
+    setLastIntent(null)
 
     const tempUserMsg: Message = {
       id: `temp-${Date.now()}`,
@@ -142,7 +167,8 @@ export default function ChatPage() {
         {
           message: userMessage,
           conversation_id: activeConversation?.id || undefined,
-          document_id: currentDocId || undefined
+          document_id: currentDocId || undefined,
+          chat_type: chatMode
         },
         (chunk) => {
           streamContentRef.current += chunk
@@ -163,7 +189,8 @@ export default function ChatPage() {
             loadConversations()
           }
         },
-        (status) => setStatusText(status)
+        (status) => setStatusText(status),
+        (intent) => setLastIntent(intent)
       )
 
       const assistantMsg: Message = {
@@ -242,43 +269,63 @@ export default function ChatPage() {
           </button>
         </div>
 
-        <div className={styles.docSelector}>
-          <button className={styles.docSelectorBtn} onClick={() => setShowDocList(!showDocList)}>
-            <BookOpen size={16} />
-            <span className={styles.docSelectorText}>
-              {selectedDoc ? selectedDoc.name : "选择文档（可选）"}
-            </span>
-            <ChevronRight
-              size={16}
-              className={`${styles.docSelectorArrow} ${showDocList ? styles.docSelectorArrowOpen : ""}`}
-            />
+        {/* 模式切换 Tab */}
+        <div className={styles.modeTabs}>
+          <button
+            className={`${styles.modeTab} ${chatMode === "general" ? styles.modeTabActive : ""}`}
+            onClick={() => { setChatMode("general"); setCurrentDocId(null); setShowDocList(false); setActiveConversation(null); setMessages([]); setLastIntent(null) }}
+          >
+            <MessageSquare size={14} />
+            通用聊天
           </button>
+          <button
+            className={`${styles.modeTab} ${chatMode === "doc_chat" ? styles.modeTabActive : ""}`}
+            onClick={() => {
+              setChatMode("doc_chat")
+              setShowDocList(true)
+              setActiveConversation(null)
+              setMessages([])
+              setLastIntent(null)
+            }}
+          >
+            <BookOpen size={14} />
+            知识库
+          </button>
+        </div>
 
-          {showDocList && (
-            <div className={styles.docList}>
+        {/* 知识库文档选择器 */}
+        {showDocList && (
+          <div className={styles.docList}>
+            {documents.filter(d => d.index_status === "ready").map(doc => (
               <button
-                className={`${styles.docListItem} ${!currentDocId ? styles.docListItemActive : ""}`}
-                onClick={() => { setCurrentDocId(null); setShowDocList(false); loadConversations() }}
+                key={doc.id}
+                className={`${styles.docListItem} ${currentDocId === doc.id ? styles.docListItemActive : ""}`}
+                onClick={() => { setCurrentDocId(doc.id); setShowDocList(false); switchConversation(null) }}
               >
                 <FileText size={14} />
-                <span>通用对话</span>
+                <span>{doc.name}</span>
               </button>
-              {documents.filter(d => d.index_status === "ready").map(doc => (
-                <button
-                  key={doc.id}
-                  className={`${styles.docListItem} ${currentDocId === doc.id ? styles.docListItemActive : ""}`}
-                  onClick={() => { setCurrentDocId(doc.id); setShowDocList(false); loadConversations() }}
-                >
-                  <FileText size={14} />
-                  <span>{doc.name}</span>
-                </button>
-              ))}
-              {documents.filter(d => d.index_status === "ready").length === 0 && (
-                <p className={styles.docListEmpty}>暂无已索引的文档</p>
-              )}
-            </div>
-          )}
-        </div>
+            ))}
+            {documents.filter(d => d.index_status === "ready").length === 0 && (
+              <p className={styles.docListEmpty}>暂无已索引的文档</p>
+            )}
+          </div>
+        )}
+
+        {/* 当前知识库文档指示器 */}
+        {currentDocId && (
+          <div className={styles.currentDocIndicator}>
+            <FileText size={14} />
+            <span className={styles.currentDocName}>{selectedDoc?.name || "加载中..."}</span>
+            <button
+              className={styles.currentDocClear}
+              onClick={() => { setCurrentDocId(null); switchConversation(null) }}
+              title="切换回通用聊天"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
 
         <div className={styles.conversationsList}>
           {conversations.map(conv => (
@@ -381,10 +428,38 @@ export default function ChatPage() {
                   </div>
                 </div>
               )}
+
+              {/* 意图识别展示 — 已移到输入框上方 */}
             </>
           )}
           <div ref={messagesEndRef} />
         </div>
+
+        {/* 意图识别状态栏 — 固定在输入框上方 */}
+        {lastIntent && (
+          <div className={styles.intentBar}>
+            <span
+              className={styles.intentDot}
+              style={{ backgroundColor: INTENT_LABELS[lastIntent.intent_type]?.color || "#8b5cf6" }}
+            />
+            <span className={styles.intentLabel}>
+              {INTENT_LABELS[lastIntent.intent_type]?.label || lastIntent.intent_type}
+            </span>
+            <span className={styles.intentConfidence}>
+              置信度 {(lastIntent.confidence * 100).toFixed(0)}%
+            </span>
+            {lastIntent.keywords.length > 0 && (
+              <span className={styles.intentKeywords}>
+                {lastIntent.keywords.slice(0, 3).map(k => (
+                  <span key={k} className={styles.intentKeyword}>{k}</span>
+                ))}
+              </span>
+            )}
+            {lastIntent.intent_type === "doc_query" && !currentDocId && (
+              <span className={styles.intentHint}>💡 已自动匹配知识库</span>
+            )}
+          </div>
+        )}
 
         {statusText && (
           <div className={styles.statusBar}>

@@ -27,20 +27,20 @@ class IntentResult:
 # ---- quick keyword heuristics (no LLM needed) --------------------------
 
 _DOC_KEYWORDS_ZH = re.compile(
-    r"(文档|文件|报告|论文|合同|表格|表格|清单|手册|说明书|目录|附件)"
+    r"(文档|文件|报告|论文|合同|表格|清单|手册|说明书|目录|附件|内容|摘要|章节|页码|第\d+页|这段|这篇|上文|下文)"
 )
 _COMPARISON_KEYWORDS_ZH = re.compile(
-    r"(对比|比较|区别|差异|相同点|不同点|哪个好|两者|各个|分别)"
+    r"(对比|比较|区别|差异|相同点|不同点|哪个好|两者|各个|分别|vs|VS)"
 )
 _GENERAL_KEYWORDS_ZH = re.compile(
-    r"(你好|嗨|hello|hi|谢谢|再见|你是谁|你能做什么|帮我|解释|是什么意思|怎么理解)"
+    r"(你好|嗨|hello|hi|谢谢|再见|你是谁|你能做什么|帮我|解释|是什么意思|怎么理解|讲一下|说说|介绍一下|什么是|为什么)"
 )
 
 
 def _quick_classify(text: str) -> Optional[str]:
     """Fast regex-based classification; returns None if uncertain."""
     t = text.strip().lower()
-    if _GENERAL_KEYWORDS_ZH.search(t) and len(t) < 30:
+    if _GENERAL_KEYWORDS_ZH.search(t):
         return "general_chat"
     if _COMPARISON_KEYWORDS_ZH.search(t):
         return "doc_comparison"
@@ -53,8 +53,12 @@ def _quick_classify(text: str) -> Optional[str]:
 
 def extract_keywords(text: str, top_n: int = 8) -> list[str]:
     """Simple keyword extraction — removes common stopwords."""
-    import jieba
-    jieba.setLogLevel(logging.WARNING)
+    try:
+        import jieba
+        jieba.setLogLevel(logging.WARNING)
+    except ImportError:
+        # Fallback: simple character-based keyword extraction without jieba
+        return _simple_keyword_fallback(text, top_n)
     STOPWORDS = {
         "的", "了", "在", "是", "我", "有", "和", "就", "不", "人", "都",
         "一", "一个", "上", "也", "很", "到", "说", "要", "去", "你",
@@ -75,6 +79,21 @@ def extract_keywords(text: str, top_n: int = 8) -> list[str]:
     return unique[:top_n]
 
 
+def _simple_keyword_fallback(text: str, top_n: int = 8) -> list[str]:
+    """Fallback keyword extraction without jieba — splits on spaces and punctuation."""
+    import re
+    # Remove common punctuation and split
+    cleaned = re.sub(r"[^\w\s]", " ", text)
+    # Filter short words and deduplicate
+    seen = set()
+    result = []
+    for w in cleaned.split():
+        if len(w) >= 2 and w not in seen:
+            seen.add(w)
+            result.append(w)
+    return result[:top_n]
+
+
 # ---- LLM-based intent classification -----------------------------------
 
 _INTENT_PROMPT = """You are an intent classifier for a document Q&A system.
@@ -85,10 +104,16 @@ Given a user message, classify the intent into one of:
 - "doc_comparison": user wants to compare content across multiple documents
 - "ambiguous": cannot determine
 
+Important: Be precise with confidence:
+- 0.9-1.0: Very clear intent (explicit document reference or obvious small talk)
+- 0.7-0.89: Fairly clear intent
+- 0.4-0.69: Some ambiguity but leaning one way
+- 0.0-0.39: Highly uncertain
+
 Also extract up to 5 important keywords from the message.
 
 Respond in JSON only:
-{"intent_type": "...", "confidence": 0.0-1.0, "keywords": ["..."], "reasoning": "..."}
+{{"intent_type": "...", "confidence": 0.0-1.0, "keywords": ["..."], "reasoning": "..."}}
 
 User message: {message}
 
@@ -103,7 +128,10 @@ async def analyze_intent(
     """Classify user intent. Falls back to keyword heuristics if LLM fails."""
     # Quick path
     quick = _quick_classify(user_message)
-    keywords = extract_keywords(user_message)
+    try:
+        keywords = extract_keywords(user_message)
+    except Exception:
+        keywords = []
 
     try:
         history_str = ""
@@ -119,17 +147,54 @@ async def analyze_intent(
         async for chunk in llm_service.generate(prompt, "", stream=False):
             parts.append(chunk)
         raw = "".join(parts).strip()
+        logger.info("Intent LLM raw response: %s", raw[:500])
 
-        # extract JSON
-        match = re.search(r"\{[^}]+\}", raw, re.DOTALL)
-        if match:
-            data = json.loads(match.group())
+        # extract JSON — try to find a valid JSON object
+        # Method 1: try parsing the whole response
+        data = None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+        
+        # Method 2: extract JSON from markdown code block or surrounding text
+        if data is None:
+            # Look for ```json ... ``` blocks first
+            code_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, re.DOTALL)
+            if code_match:
+                try:
+                    data = json.loads(code_match.group(1))
+                except json.JSONDecodeError:
+                    pass
+            
+            # Method 3: find outermost balanced braces
+            if data is None:
+                # Find the first { and match to its closing }
+                start = raw.find('{')
+                if start >= 0:
+                    depth = 0
+                    for i in range(start, len(raw)):
+                        if raw[i] == '{':
+                            depth += 1
+                        elif raw[i] == '}':
+                            depth -= 1
+                            if depth == 0:
+                                candidate = raw[start:i+1]
+                                try:
+                                    data = json.loads(candidate)
+                                    break
+                                except json.JSONDecodeError:
+                                    pass
+        
+        if data is not None:
             return IntentResult(
                 intent_type=data.get("intent_type", "ambiguous"),
                 confidence=float(data.get("confidence", 0.5)),
                 keywords=data.get("keywords", keywords),
                 reasoning=data.get("reasoning", ""),
             )
+        else:
+            logger.warning("Intent: could not extract JSON from LLM response")
     except Exception as exc:
         logger.warning("LLM intent classification failed: %s", exc)
 

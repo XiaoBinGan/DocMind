@@ -40,6 +40,14 @@ export interface Message {
   created_at: string
 }
 
+export interface IntentResult {
+  intent_type: string  // doc_query | general_chat | doc_comparison | ambiguous
+  confidence: number
+  keywords: string[]
+  matched_document_ids?: string[]
+  reasoning: string
+}
+
 export interface Reference {
   page: number
   reason: string
@@ -50,6 +58,7 @@ export interface ChatRequest {
   message: string
   conversation_id?: string
   document_id?: string
+  chat_type?: "general" | "doc_chat"
   stream?: boolean
 }
 
@@ -152,9 +161,12 @@ class ApiClient {
   }
 
   // Conversations API
-  async listConversations(documentId?: string): Promise<{ conversations: Conversation[]; total: number }> {
-    const params = documentId ? `?document_id=${documentId}` : ""
-    return this.request(`/api/conversations${params}`)
+  async listConversations(documentId?: string, chatType?: string): Promise<{ conversations: Conversation[]; total: number }> {
+    const params = new URLSearchParams()
+    if (documentId) params.set("document_id", documentId)
+    if (chatType) params.set("chat_type", chatType)
+    const qs = params.toString()
+    return this.request(`/api/conversations${qs ? "?" + qs : ""}`)
   }
 
   async getConversation(id: string): Promise<Conversation> {
@@ -179,7 +191,8 @@ class ApiClient {
     request: ChatRequest,
     onChunk: (chunk: string) => void,
     onDone: (messageId: string, conversationId: string, references: Reference[] | null) => void,
-    onStatus?: (status: string) => void
+    onStatus?: (status: string) => void,
+    onIntent?: (intent: IntentResult) => void
   ): Promise<void> {
     const response = await fetch(`${this.baseUrl}/api/chat/stream`, {
       method: "POST",
@@ -199,6 +212,7 @@ class ApiClient {
     let messageId = ""
     let conversationId = ""
     let references: Reference[] | null = null
+    let intent: IntentResult | null = null
     let doneReceived = false
 
     while (true) {
@@ -222,6 +236,12 @@ class ApiClient {
             onChunk(data)
           } else if (currentEvent === "references") {
             try { references = JSON.parse(data) } catch { references = null }
+          } else if (currentEvent === "intent") {
+            try { 
+              const parsed = JSON.parse(data)
+              intent = parsed
+              onIntent?.(parsed)
+            } catch { intent = null }
           } else if (currentEvent === "done") {
             messageId = data
             doneReceived = true
@@ -249,6 +269,13 @@ class ApiClient {
         if (currentEvent === "chunk") onChunk(data)
         else if (currentEvent === "references") {
           try { references = JSON.parse(data) } catch { references = null }
+        }
+        else if (currentEvent === "intent") {
+          try { 
+            const parsed = JSON.parse(data)
+            intent = parsed
+            onIntent?.(parsed)
+          } catch { intent = null }
         }
         else if (currentEvent === "done") { 
           messageId = data

@@ -18,7 +18,7 @@ export default function Nav() {
           <span className={styles.logoText}>DocMind</span>
         </Link>
         <div className={styles.links}>
-          <Link href="/" className={`${styles.link} ${pathname === "/" ? styles.linkActive : ""}`}>
+          <Link href="/chat" className={`${styles.link} ${pathname === "/chat" ? styles.linkActive : ""}`}>
             对话
           </Link>
           <Link href="/documents" className={`${styles.link} ${pathname === "/documents" ? styles.linkActive : ""}`}>

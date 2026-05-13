@@ -14,8 +14,12 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
     MAX_FILE_SIZE: int = 50 * 1024 * 1024  # 50MB
     
-    # Database
-    DATABASE_URL: str = "sqlite+aiosqlite:///./docmind.db"
+    # Database — absolute path to project root docmind.db
+    _this_dir = os.path.dirname(os.path.abspath(__file__))  # backend/app/core/
+    _backend_dir = os.path.dirname(os.path.dirname(_this_dir))  # backend/
+    _project_root = os.path.dirname(_backend_dir)  # DocMind/
+    _db_path = os.path.join(_project_root, 'docmind.db')
+    DATABASE_URL: str = f"sqlite+aiosqlite:///{_db_path.replace(os.sep, '/')}"
     
     # LLM Settings
     LLM_PROVIDER: Literal["openai", "anthropic", "local", "ollama"] = "openai"
