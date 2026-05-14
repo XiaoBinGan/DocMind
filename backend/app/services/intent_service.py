@@ -40,11 +40,15 @@ _GENERAL_KEYWORDS_ZH = re.compile(
 def _quick_classify(text: str) -> Optional[str]:
     """Fast regex-based classification; returns None if uncertain."""
     t = text.strip().lower()
-    if _GENERAL_KEYWORDS_ZH.search(t):
-        return "general_chat"
     if _COMPARISON_KEYWORDS_ZH.search(t):
         return "doc_comparison"
     if _DOC_KEYWORDS_ZH.search(t):
+        return "doc_query"
+    if _GENERAL_KEYWORDS_ZH.search(t):
+        return "general_chat"
+    # Short noun phrases (no explicit markers) — in a doc Q&A system,
+    # bare terms are almost always document queries
+    if len(t) >= 2 and not _GENERAL_KEYWORDS_ZH.search(t):
         return "doc_query"
     return None
 
@@ -198,10 +202,11 @@ async def analyze_intent(
     except Exception as exc:
         logger.warning("LLM intent classification failed: %s", exc)
 
-    # Fallback
+    # Fallback — in a document Q&A system, when uncertain, default to doc_query
+    fallback_type = quick if quick else "doc_query"
     return IntentResult(
-        intent_type=quick or "ambiguous",
-        confidence=0.4,
+        intent_type=fallback_type,
+        confidence=0.5 if not quick else 0.6,
         keywords=keywords,
         reasoning="fallback heuristic",
     )

@@ -198,7 +198,17 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
         import logging; logging.getLogger(__name__).warning("Intent analysis failed: %s", exc)
 
     # Auto-select document if none specified
-    if not conv.document_id and intent_result and intent_result.intent_type in ("doc_query", "doc_comparison"):
+    # For doc Q&A system: default to trying doc matching unless clearly general_chat
+    should_match_docs = False
+    if intent_result:
+        if intent_result.intent_type in ("doc_query", "doc_comparison"):
+            should_match_docs = True
+        elif intent_result.intent_type == "ambiguous":
+            should_match_docs = True
+    else:
+        should_match_docs = True
+
+    if not conv.document_id and should_match_docs:
         try:
             from app.services.doc_matcher import match_documents
             matches = await match_documents(request.message, intent_result.keywords, db)
@@ -224,18 +234,15 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 
     # Build prompt
     system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
-Answer questions accurately based on document content. Cite specific pages when providing information.
+Answer questions accurately based on document content when available.
+If no document context is provided, answer the user's question using your general knowledge.
+Always respond in the same language the user uses.
+Do NOT refuse to answer or ask the user to provide documents — do your best with available context."""
 
-When answering questions about classifications, categories, or tables:
-1. Identify the specific classification criteria mentioned in the document
-2. List all categories and their definitions clearly
-3. Reference the exact table or section where this information is found
-4. Explain the relationships between different categories"""
-    
     if context:
-        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nCONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context. If the question involves classifications or categories, be specific about the criteria and relationships."
+        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nCONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
     else:
-        user_prompt = f"USER QUESTION: {request.message}"
+        user_prompt = f"CONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}"
     
     # Generate response
     response_text = ""
@@ -403,7 +410,19 @@ async def chat_stream(request: ChatRequest):
                 import logging as _log; _log.getLogger(__name__).warning("Intent analysis failed: %s", exc)
 
             # Auto-select document if none specified
-            if not conv.document_id and intent_result and intent_result.intent_type in ("doc_query", "doc_comparison"):
+            # For doc Q&A system: default to trying doc matching unless clearly general_chat
+            should_match_docs = False
+            if intent_result:
+                if intent_result.intent_type in ("doc_query", "doc_comparison"):
+                    should_match_docs = True
+                elif intent_result.intent_type == "ambiguous":
+                    # In a doc Q&A system, ambiguous queries should try doc matching
+                    should_match_docs = True
+            else:
+                # No intent result — default to doc matching
+                should_match_docs = True
+
+            if not conv.document_id and should_match_docs:
                 try:
                     from app.services.doc_matcher import match_documents
                     matches = await match_documents(request.message, intent_result.keywords, session)
@@ -427,12 +446,15 @@ async def chat_stream(request: ChatRequest):
 
             # Build prompt
             system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
-Answer questions accurately based on document content. Always respond in the same language the user uses."""
-            
+Answer questions accurately based on document content when available.
+If no document context is provided, answer the user's question using your general knowledge.
+Always respond in the same language the user uses.
+Do NOT refuse to answer or ask the user to provide documents — do your best with available context."""
+
             if context:
                 user_prompt = f"DOCUMENT CONTEXT:{context}\n\nCONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
             else:
-                user_prompt = f"USER QUESTION: {request.message}"
+                user_prompt = f"CONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}"
             
             # Stream response
             full_response = ""

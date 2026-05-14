@@ -52,6 +52,18 @@ def _keyword_score(keywords: list[str], text: str) -> float:
     return hits / len(keywords)
 
 
+def _token_overlap_score(keywords: list[str], text: str) -> float:
+    """Score based on how many keyword tokens appear in text (more granular)."""
+    if not keywords or not text:
+        return 0.0
+    text_lower = text.lower()
+    matched = 0
+    for k in keywords:
+        if k.lower() in text_lower:
+            matched += 1
+    return matched / len(keywords)
+
+
 async def match_documents(
     user_message: str,
     keywords: list[str],
@@ -71,17 +83,28 @@ async def match_documents(
     # Phase 1: keyword matching
     scored: list[MatchResult] = []
     for doc in docs:
-        # Build searchable text from document name + index tree titles
+        # Build searchable text from document name + index tree titles only
         searchable = doc.name
         if doc.index_tree:
             flat = _flatten_index_tree(doc.index_tree)
             searchable += " " + " ".join(item["title"] for item in flat)
 
-        score = _keyword_score(keywords, searchable)
-        # Also try direct message matching
-        direct_score = _keyword_score(keywords, doc.name + " " + user_message[:200])
+        # Score: keyword overlap with document name + index tree titles
+        score = _token_overlap_score(keywords, searchable)
 
-        combined = max(score, direct_score)
+        # Bonus: partial match — how many keyword chars appear in searchable
+        if score == 0 and keywords:
+            # Try each keyword individually for partial matches
+            partial_hits = 0
+            for k in keywords:
+                kw_chars = set(k)
+                if len(kw_chars) >= 2:
+                    overlap = kw_chars & set(searchable)
+                    if len(overlap) / len(kw_chars) >= 0.5:
+                        partial_hits += 1
+            score = partial_hits / len(keywords) * 0.5  # Lower weight for partial
+
+        combined = score
         if combined > 0:
             scored.append(MatchResult(
                 document_id=doc.id,
@@ -93,8 +116,26 @@ async def match_documents(
     # Sort by relevance
     scored.sort(key=lambda x: x.relevance_score, reverse=True)
 
-    # Phase 2: LLM re-ranking if we have multiple candidates
-    if len(scored) > 1 and len(scored) <= 10:
+    # Phase 2: LLM-based matching when keyword matching is weak
+    # When in a doc Q&A system and user sends a query, always try to find a doc
+    if not scored or scored[0].relevance_score < 0.5:
+        try:
+            # Build candidate list from all docs if keyword matches are too weak
+            rerank_candidates = scored if scored else [
+                MatchResult(
+                    document_id=doc.id,
+                    document_name=doc.name,
+                    relevance_score=0.0,
+                    match_reason="no keyword match, LLM fallback",
+                )
+                for doc in docs[:10]  # Limit to 10 docs for LLM
+            ]
+            if len(rerank_candidates) >= 1:
+                scored = await _llm_rerank(user_message, rerank_candidates, limit)
+        except Exception as exc:
+            logger.warning("LLM fallback matching failed: %s", exc)
+    elif len(scored) > 1 and len(scored) <= 10:
+        # Keyword matches are good — LLM re-rank for better precision
         try:
             scored = await _llm_rerank(user_message, scored, limit)
         except Exception as exc:
@@ -129,11 +170,26 @@ Respond in JSON: {{"ranked_ids": ["id1", "id2", ...], "reasons": {{"id1": "reaso
     raw = "".join(parts).strip()
 
     import re
-    match = re.search(r"\{[^}]+\}", raw, re.DOTALL)
-    if not match:
+    # Find JSON with balanced braces (handles nested objects)
+    start = raw.find('{')
+    if start < 0:
         return candidates
-
-    data = json.loads(match.group())
+    depth = 0
+    end = start
+    for i in range(start, len(raw)):
+        if raw[i] == '{':
+            depth += 1
+        elif raw[i] == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if end <= start:
+        return candidates
+    try:
+        data = json.loads(raw[start:end])
+    except json.JSONDecodeError:
+        return candidates
     ranked_ids = data.get("ranked_ids", [])
     reasons = data.get("reasons", {})
 
