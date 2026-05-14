@@ -47,6 +47,10 @@ async def lifespan(app: FastAPI):
     settings_service.init(async_session_maker)
     await settings_service.reload()
 
+    # Ensure JWT secret key exists in DB
+    from app.services.auth_service import ensure_jwt_secret_key
+    await ensure_jwt_secret_key()
+
     # Ensure default admin user exists
     from app.services.auth_service import ensure_default_admin
     await ensure_default_admin()
@@ -67,7 +71,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

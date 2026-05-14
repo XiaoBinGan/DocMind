@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select, func, and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from app.models.database import Memory
 from app.services.llm import llm_service

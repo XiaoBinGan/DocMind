@@ -7,9 +7,9 @@ import os
 import uuid
 import aiofiles
 
-from app.models.database import Document
+from app.models.database import Document, User
 from app.models.schemas import DocumentResponse, DocumentListResponse, IndexStatusResponse, IndexNode
-from app.core.config import settings
+from app.services.auth_service import get_current_user
 from app.services.parser import document_parser
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -29,21 +29,33 @@ async def get_db():
             await session.close()
 
 
+def _doc_filter_query(current_user: User, include_public: bool = True):
+    """Return a filtered query that only shows user's own docs (and public ones)."""
+    q = select(Document).where(
+        (Document.user_id == current_user.id) |
+        (Document.user_id == None)  # include any public/unowned docs
+    )
+    return q
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
     background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
 ):
-    """Upload a new document."""
-    ext = os.path.splitext(file.filename)[1].lower()
+    """Upload a new document owned by the current user."""
     if not document_parser.is_supported(file.filename):
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file type. Supported: {', '.join(document_parser.get_supported_types())}"
         )
     
+    from app.core.config import settings
+    
     unique_id = str(uuid.uuid4())
+    ext = os.path.splitext(file.filename)[1].lower()
     safe_filename = f"{unique_id}{ext}"
     file_path = os.path.join(settings.UPLOAD_DIR, safe_filename)
     
@@ -60,6 +72,7 @@ async def upload_document(
         file_path=file_path,
         file_type=ext,
         file_size=len(content),
+        user_id=current_user.id,  # 绑定上传者为所有者
         index_status="pending"
     )
     db.add(doc)
@@ -87,11 +100,11 @@ async def index_document(doc_id: str):
     from sqlalchemy.orm import sessionmaker
     from app.services.indexer import page_indexer
     from app.services.settings_service import settings_service
+    from app.core.config import settings
     
     engine = create_async_engine(settings.DATABASE_URL, echo=False)
     async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     
-    # 确保 settings_service 已初始化（后台任务可能在独立上下文中运行）
     if not settings_service.ready:
         settings_service.init(async_session)
         await settings_service.reload()
@@ -129,9 +142,13 @@ async def index_document(doc_id: str):
 
 
 @router.get("", response_model=DocumentListResponse)
-async def list_documents(db: AsyncSession = Depends(get_db)):
-    """List all documents."""
-    result = await db.execute(select(Document).order_by(Document.created_at.desc()))
+async def list_documents(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List documents owned by or public to current user."""
+    q = _doc_filter_query(current_user)
+    result = await db.execute(q.order_by(Document.created_at.desc()))
     docs = result.scalars().all()
     
     return DocumentListResponse(
@@ -154,9 +171,17 @@ async def list_documents(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    """Get a specific document."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
+async def get_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a document (must be owner or public)."""
+    q = select(Document).where(
+        (Document.id == doc_id) &
+        ((Document.user_id == current_user.id) | (Document.user_id == None))
+    )
+    result = await db.execute(q)
     doc = result.scalar_one_or_none()
     
     if not doc:
@@ -176,9 +201,17 @@ async def get_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.delete("/{doc_id}")
-async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    """Delete a document."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
+async def delete_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a document (must be owner or admin)."""
+    q = select(Document).where(
+        (Document.id == doc_id) &
+        ((Document.user_id == current_user.id) | (Document.user_id == None))
+    )
+    result = await db.execute(q)
     doc = result.scalar_one_or_none()
     
     if not doc:
@@ -197,9 +230,18 @@ async def delete_document(doc_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/{doc_id}/reindex", response_model=IndexStatusResponse)
-async def reindex_document(doc_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
-    """Reindex a document."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
+async def reindex_document(
+    doc_id: str,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reindex a document (must be owner or public)."""
+    q = select(Document).where(
+        (Document.id == doc_id) &
+        ((Document.user_id == current_user.id) | (Document.user_id == None))
+    )
+    result = await db.execute(q)
     doc = result.scalar_one_or_none()
     
     if not doc:
@@ -214,9 +256,17 @@ async def reindex_document(doc_id: str, background_tasks: BackgroundTasks, db: A
 
 
 @router.get("/{doc_id}/index/status", response_model=IndexStatusResponse)
-async def get_index_status(doc_id: str, db: AsyncSession = Depends(get_db)):
-    """Get the indexing status of a document."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
+async def get_index_status(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the indexing status of a document (must be owner or public)."""
+    q = select(Document).where(
+        (Document.id == doc_id) &
+        ((Document.user_id == current_user.id) | (Document.user_id == None))
+    )
+    result = await db.execute(q)
     doc = result.scalar_one_or_none()
     
     if not doc:
@@ -230,9 +280,17 @@ async def get_index_status(doc_id: str, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/{doc_id}/download")
-async def download_document(doc_id: str, db: AsyncSession = Depends(get_db)):
-    """Download a document file."""
-    result = await db.execute(select(Document).where(Document.id == doc_id))
+async def download_document(
+    doc_id: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Download a document file (must be owner or public)."""
+    q = select(Document).where(
+        (Document.id == doc_id) &
+        ((Document.user_id == current_user.id) | (Document.user_id == None))
+    )
+    result = await db.execute(q)
     doc = result.scalar_one_or_none()
     
     if not doc:

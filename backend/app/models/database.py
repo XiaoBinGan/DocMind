@@ -36,8 +36,11 @@ class Document(Base):
     file_size = Column(Integer, default=0)
     page_count = Column(Integer, default=0)
     index_status = Column(String, default="pending")  # pending, indexing, ready, error
+    index_progress = Column(Integer, default=0)  # 0-100 progress when indexing
+    index_started_at = Column(DateTime, nullable=True)  # when indexing began
     index_tree = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)  # 文档所有者
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
