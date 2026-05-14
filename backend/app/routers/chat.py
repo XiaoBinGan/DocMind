@@ -285,6 +285,24 @@ Answer questions accurately based on document content. Cite specific pages when 
     async for chunk in llm_service.generate(system_prompt, user_prompt, stream=False):
         response_text += chunk
     
+    # Record token usage
+    prompt_tokens, completion_tokens, total_tokens = llm_service.last_usage
+    if total_tokens > 0:
+        try:
+            from app.routers.token import record_token_usage
+            await record_token_usage(
+                user_id=current_user.id,
+                conversation_id=conv.id,
+                model_name=llm_service._last_model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens,
+                db=db,  # pass current session to avoid lock contention
+            )
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning("Failed to record token usage: %s", e)
+    
     # Save assistant message
     assistant_msg = Message(
         id=str(uuid.uuid4()), conversation_id=conv.id, role="assistant",
@@ -408,6 +426,20 @@ async def chat_stream(
                 session.add(assistant_msg)
                 conv.updated_at = datetime.utcnow()
                 await session.commit()
+                
+                # Record token usage
+                pt, ct, tt = llm_service.last_usage
+                if tt > 0 and conversation_id:
+                    try:
+                        from app.routers.token import record_token_usage
+                        await record_token_usage(
+                            user_id=current_user.id,
+                            conversation_id=conversation_id,
+                            model_name=llm_service._last_model,
+                            prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
+                        )
+                    except Exception as _e:
+                        pass
                 
                 yield f"event: done\ndata: {assistant_msg.id}\n\n"
                 yield f"event: references\ndata: {_json.dumps(references or [], ensure_ascii=False)}\n\n"

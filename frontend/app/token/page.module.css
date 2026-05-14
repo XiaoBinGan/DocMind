@@ -1,0 +1,248 @@
+/* Token usage page — uses CSS variables for theme consistency */
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 32px 24px 80px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+.daysSelector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 4px;
+  border: 1px solid var(--border);
+}
+
+.dayBtn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: color 0.15s, background 0.15s;
+}
+
+.dayBtnActive {
+  background: var(--accent-primary);
+  color: var(--bg-primary);
+  font-weight: 500;
+}
+
+.dayBtn:hover:not(.dayBtnActive) {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+.error {
+  background: rgba(255, 82, 82, 0.1);
+  color: var(--error);
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(255, 82, 82, 0.2);
+}
+
+.loading {
+  text-align: center;
+  padding: 48px;
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+/* Summary cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transition: border-color 0.2s;
+}
+
+.card:hover {
+  border-color: var(--accent-primary);
+}
+
+.cardLabel {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.cardValue {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-primary);
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Chart */
+.chartSection {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 20px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.barChart {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  height: 200px;
+  padding-top: 16px;
+  overflow-x: auto;
+}
+
+.barItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 36px;
+  flex: 1;
+}
+
+.barContainer {
+  width: 100%;
+  height: 160px;
+  display: flex;
+  align-items: flex-end;
+}
+
+.bar {
+  width: 100%;
+  max-width: 28px;
+  background: var(--accent-primary);
+  border-radius: 2px 2px 0 0;
+  min-height: 2px;
+  transition: background 0.2s;
+}
+
+.bar:hover {
+  background: var(--accent-secondary);
+}
+
+.barLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.barValue {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+/* Table */
+.tableSection {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 0;
+  border: 1px solid var(--border);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table tr:hover td {
+  background: rgba(0, 201, 255, 0.04);
+}
+
+.idCell {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.totalCell {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  color: var(--accent-primary);
+}
+
+.noData {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px;
+}
+
+@media (max-width: 640px) {
+  .cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .barChart {
+    height: 160px;
+  }
+}

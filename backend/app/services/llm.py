@@ -74,18 +74,36 @@ class LLMService:
             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
         )
 
+        self._last_model = model
+        self._last_prompt_tokens = 0
+        self._last_completion_tokens = 0
+        self._last_total_tokens = 0
+
         if stream:
             async for chunk in resp:
+                if hasattr(chunk, 'usage') and chunk.usage:
+                    self._last_prompt_tokens = chunk.usage.prompt_tokens or self._last_prompt_tokens
+                    self._last_completion_tokens = chunk.usage.completion_tokens or self._last_completion_tokens
+                    self._last_total_tokens = chunk.usage.total_tokens or self._last_total_tokens
                 delta = chunk.choices[0].delta.content
                 if delta:
                     cleaned = _filter_think_tokens(delta)
                     if cleaned:
                         yield cleaned
         else:
+            if resp.usage:
+                self._last_prompt_tokens = resp.usage.prompt_tokens or 0
+                self._last_completion_tokens = resp.usage.completion_tokens or 0
+                self._last_total_tokens = resp.usage.total_tokens or 0
             text = resp.choices[0].message.content or ""
             cleaned = _filter_think_tokens(text)
             if cleaned:
                 yield cleaned
+
+    @property
+    def last_usage(self):
+        """Return (prompt_tokens, completion_tokens, total_tokens) from last generate call."""
+        return (self._last_prompt_tokens, self._last_completion_tokens, self._last_total_tokens)
 
     async def generate_structure(self, prompt: str) -> str:
         """Non-streaming structured output (used by indexer)."""

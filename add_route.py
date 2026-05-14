@@ -1,0 +1,46 @@
+path = r'G:\openclaw\DocMind\backend\app\routers\chat.py'
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+marker = '''    )
+
+
+@router.get("/conversations/{conv_id}"'''
+
+idx = content.find(marker)
+if idx == -1:
+    print('Marker not found')
+else:
+    insert_code = '''@router.post("/conversations", response_model=ConversationResponse)
+async def create_conversation(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    title = body.get("title", "New conversation")
+    chat_type = body.get("chat_type", "general")
+    document_id = body.get("document_id")
+    
+    conv = Conversation(
+        id=str(uuid.uuid4()),
+        title=title[:50] if len(title) > 50 else title,
+        user_id=current_user.id,
+        document_id=document_id,
+        chat_type=chat_type
+    )
+    db.add(conv)
+    await db.flush()
+    
+    return ConversationResponse(
+        id=conv.id, title=conv.title, user_id=conv.user_id,
+        chat_type=conv.chat_type, document_id=conv.document_id,
+        messages=[],
+        created_at=conv.created_at, updated_at=conv.updated_at
+    )
+
+
+'''
+    new_content = content[:idx] + insert_code + content[idx:]
+    with open(path, 'w', encoding='utf-8', newline='\n') as f:
+        f.write(new_content)
+    print('Inserted create_conversation route')

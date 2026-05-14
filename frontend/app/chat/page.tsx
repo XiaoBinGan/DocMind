@@ -52,6 +52,13 @@ export default function ChatPage() {
   const [statusText, setStatusText] = useState("")
   const [showDocList, setShowDocList] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const formatTime = (iso?: string) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
   const [lastIntent, setLastIntent] = useState<IntentResult | null>(null)
   const [chatMode, setChatMode] = useState<"general" | "doc_chat">("general")
 
@@ -387,10 +394,6 @@ export default function ChatPage() {
                   key={msg.id || index}
                   className={`${styles.message} ${msg.role === "user" ? styles.userMessage : styles.assistantMessage}`}
                 >
-                  <div className={styles.messageAvatar}>
-                    {msg.role === "user" ? "你" : "AI"}
-                  </div>
-
                   <div className={styles.messageBody}>
                     <div className={styles.messageBubble}>
                       {msg.role === "user" ? (
@@ -398,6 +401,10 @@ export default function ChatPage() {
                       ) : (
                         <MarkdownContent content={msg.content} />
                       )}
+                    </div>
+
+                    <div className={styles.messageTime}>
+                      {formatTime(msg.created_at)}
                     </div>
 
                     {msg.role === "assistant" && chatMode !== "general" && (
@@ -429,7 +436,6 @@ export default function ChatPage() {
 
               {streaming && streamContent && (
                 <div className={`${styles.message} ${styles.assistantMessage}`}>
-                  <div className={styles.messageAvatar}>AI</div>
                   <div className={styles.messageBody}>
                     <div className={styles.messageBubble}>
                       <MarkdownContent content={streamContent} streaming />

@@ -6,11 +6,22 @@ from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
 from app.models.database import Base
-from app.routers import documents, chat, models, settings as settings_router, auth, memory, memories
+from app.routers import documents, chat, models, settings as settings_router, auth, memory, memories, token
 
 # Database setup
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG)
+engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG, connect_args={"timeout": 30, "check_same_thread": False})
 async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+# Enable WAL mode for better concurrent access
+from sqlalchemy import text
+async def _enable_wal():
+    async with engine.begin() as conn:
+        await conn.execute(text("PRAGMA journal_mode=WAL"))
+        await conn.execute(text("PRAGMA synchronous=NORMAL"))
+        await conn.execute(text("PRAGMA busy_timeout=5000"))
+
+import asyncio
+asyncio.create_task(_enable_wal())
 
 # Export for use in routers
 async_session_maker = async_session_maker
@@ -85,6 +96,7 @@ app.include_router(models.router)
 app.include_router(settings_router.router)
 app.include_router(memory.router)
 app.include_router(memories.router)
+app.include_router(token.router)
 
 
 @app.get("/")

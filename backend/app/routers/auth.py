@@ -5,13 +5,14 @@ import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.models.database import User
+from app.models.database import User, Conversation, Message
 from app.models.schemas import (
     UserResponse, UserCreate, UserLogin, UserUpdate,
-    TokenResponse, ChangePasswordRequest,
+    TokenResponse, ChangePasswordRequest, UserToggleBody,
 )
 from app.services.auth_service import (
     hash_password, verify_password, create_token, get_current_user,
@@ -146,3 +147,164 @@ async def change_password(
     current_user.updated_at = datetime.utcnow()
     await db.flush()
     return {"message": "Password changed successfully"}
+
+
+# ── Admin routes ─────────────────────────────────────────────
+
+
+async def _require_admin(current_user: User = Depends(get_current_user)):
+    """Ensure the current user is an admin."""
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
+
+@router.get("/admin/users", response_model=list[dict])
+async def admin_get_users(
+    current_user: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all users with conversation count (admin only)."""
+    result = await db.execute(select(User).order_by(User.created_at.desc()))
+    users = result.scalars().all()
+    
+    # Count conversations per user via subquery
+    conv_counts = {}
+    if users:
+        user_ids = [u.id for u in users]
+        conv_query = await db.execute(
+            select(Conversation.user_id, func.count(Conversation.id))
+            .where(Conversation.user_id.in_(user_ids))
+            .group_by(Conversation.user_id)
+        )
+        conv_counts = {uid: count for uid, count in conv_query}
+    
+    resp = []
+    for u in users:
+        conv_count = conv_counts.get(u.id, 0) or 0
+        resp.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "display_name": u.display_name,
+            "is_active": u.is_active,
+            "is_admin": u.is_admin,
+            "conversation_count": conv_count,
+            "created_at": u.created_at.isoformat(),
+            "updated_at": u.updated_at.isoformat(),
+        })
+    return resp
+
+
+@router.post("/admin/users/{user_id}")
+async def admin_update_user(
+    user_id: str,
+    body: UserToggleBody,
+    current_user: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Toggle user status or admin role (admin only)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Prevent self-deadmin / self-deactivate
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot modify your own account")
+
+    if body.action == "activate":
+        target.is_active = True
+    elif body.action == "deactivate":
+        target.is_active = False
+    elif body.action == "grant_admin":
+        target.is_admin = True
+    elif body.action == "revoke_admin":
+        target.is_admin = False
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    target.updated_at = datetime.utcnow()
+    await db.flush()
+    return {
+        "message": f"User {body.action} successful",
+        "user_id": target.id,
+        "is_active": target.is_active,
+        "is_admin": target.is_admin,
+    }
+
+
+@router.get("/admin/conversations")
+async def admin_get_conversations(
+    user_id: str = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all conversations, optionally filtered by user_id (admin only)."""
+    query = select(Conversation).options(
+        selectinload(Conversation.messages),
+        selectinload(Conversation.user)
+    ).order_by(Conversation.updated_at.desc())
+    if user_id:
+        query = query.where(Conversation.user_id == user_id)
+    total = await db.execute(select(func.count()).select_from(query.subquery()))
+    total = total.scalar()
+    query = query.offset((page - 1) * page_size).limit(page_size)
+    result = await db.execute(query)
+    convs = result.scalars().all()
+    resp = []
+    for c in convs:
+        msg_count = len(c.messages) if c.messages else 0
+        user = c.user
+        user_name = user.username if user else "unknown"
+        resp.append({
+            "id": c.id,
+            "title": c.title or "",
+            "user_id": c.user_id or "",
+            "username": user_name,
+            "chat_type": c.chat_type,
+            "document_id": c.document_id,
+            "message_count": msg_count,
+            "created_at": c.created_at.isoformat(),
+            "updated_at": c.updated_at.isoformat(),
+        })
+    return {"conversations": resp, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/admin/conversations/{conv_id}")
+async def admin_get_conversation_detail(
+    conv_id: str,
+    current_user: User = Depends(_require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get full conversation detail including all messages (admin only)."""
+    result = await db.execute(
+        select(Conversation)
+        .options(selectinload(Conversation.messages))
+        .where(Conversation.id == conv_id)
+    )
+    conv = result.scalar_one_or_none()
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    return {
+        "id": conv.id,
+        "title": conv.title or "",
+        "user_id": conv.user_id or "",
+        "chat_type": conv.chat_type,
+        "document_id": conv.document_id,
+        "messages": [
+            {
+                "id": m.id,
+                "role": m.role,
+                "content": m.content,
+                "references": m.references,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in conv.messages
+        ],
+        "created_at": conv.created_at.isoformat(),
+        "updated_at": conv.updated_at.isoformat(),
+    }

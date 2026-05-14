@@ -3,16 +3,17 @@
 import { useState, FormEvent } from "react"
 import Link from "next/link"
 import { useAuth } from "@/lib/auth"
-import { Layers, Eye, EyeOff, Loader, AlertCircle } from "lucide-react"
+import { Layers, Eye, EyeOff, Loader, AlertCircle, Check } from "lucide-react"
 import styles from "./login.module.css"
 
 export default function LoginPage() {
   const { login } = useAuth()
-  const [username, setUsername] = useState("")
+  const [username, setUsername] = useState(() => localStorage.getItem("docmind_remember") || "")
   const [password, setPassword] = useState("")
   const [showPwd, setShowPwd] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
+  const [remember, setRemember] = useState(!!localStorage.getItem("docmind_remember"))
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -21,6 +22,11 @@ export default function LoginPage() {
     setLoading(true)
     try {
       await login(username.trim(), password)
+      if (remember) {
+        localStorage.setItem("docmind_remember", username)
+      } else {
+        localStorage.removeItem("docmind_remember")
+      }
     } catch (err: any) {
       setError(err.message || "登录失败")
     } finally {
@@ -71,6 +77,21 @@ export default function LoginPage() {
                 {showPwd ? <EyeOff size={18} /> : <Eye size={18} />}
               </button>
             </div>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: "0.875rem", color: "#94a3b8" }}>
+              <div style={{
+                width: 18, height: 18, border: remember ? "none" : "1.5px solid #475569",
+                borderRadius: 4, background: remember ? "#2563eb" : "transparent",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "all 0.15s",
+              }}>
+                {remember && <Check size={12} style={{ color: "#fff" }} />}
+              </div>
+              <input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} style={{ display: "none" }} />
+              记住密码
+            </label>
           </div>
 
           <button type="submit" className={styles.submitBtn} disabled={loading || !username.trim() || !password}>

@@ -348,6 +348,139 @@ class ApiClient {
   async deleteMemory(id: string): Promise<void> {
     await this.request(`/api/memories/${id}`, { method: "DELETE" })
   }
+
+  // ── Admin API ──
+  async getAdminUsers(): Promise<AdminUser[]> {
+    return this.request("/api/auth/admin/users")
+  }
+
+  async updateAdminUser(userId: string, action: string): Promise<any> {
+    return this.request(`/api/auth/admin/users/${userId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    })
+  }
+
+  async getAdminConversations(userId?: string, page = 1): Promise<{ conversations: AdminConversation[]; total: number; page: number }> {
+    const params = new URLSearchParams({ page: String(page) })
+    if (userId) params.set("user_id", userId)
+    return this.request(`/api/auth/admin/conversations?${params}`)
+  }
+
+  async getAdminConversationDetail(convId: string): Promise<AdminConversationDetail> {
+    return this.request(`/api/auth/admin/conversations/${convId}`)
+  }
+
+  // ── Token API ──
+  async getTokenUsage(days = 30, limit = 100): Promise<TokenUsageRecord[]> {
+    return this.request(`/api/token/my-usage?days=${days}&limit=${limit}`)
+  }
+
+  async getTokenSummary(days = 30): Promise<TokenSummary> {
+    return this.request(`/api/token/my-summary?days=${days}`)
+  }
+
+  async getAdminTokenUsage(userId?: string, days = 30, page = 1, pageSize = 50): Promise<{ records: TokenUsageRecord[]; total: number }> {
+    const params = new URLSearchParams({ days: String(days), page: String(page), page_size: String(pageSize) })
+    if (userId) params.set('user_id', userId)
+    return this.request(`/api/token/admin/usage?${params}`)
+  }
+
+  async getAdminTokenSummary(userId?: string, days = 30): Promise<UserTokenSummary[]> {
+    const params = new URLSearchParams({ days: String(days) })
+    if (userId) params.set('user_id', userId)
+    return this.request(`/api/token/admin/summary?${params}`)
+  }
+
+  async getTokenUsageCount(userId: string, days = 30): Promise<{ total_tokens: number; turn_count: number }> {
+    const params = new URLSearchParams({ days: String(days) })
+    params.set('user_id', userId)
+    const result = await this.request(`/api/token/admin/summary?${params}`) as UserTokenSummary[]
+    if (result.length > 0) return {
+      total_tokens: result[0].total_tokens,
+      turn_count: result[0].turn_count,
+    }
+    return { total_tokens: 0, turn_count: 0 }
+  }
+}
+
+// ── Admin types ──
+export interface AdminUser {
+  id: string
+  username: string
+  email: string | null
+  display_name: string | null
+  is_active: boolean
+  is_admin: boolean
+  conversation_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminConversation {
+  id: string
+  title: string
+  user_id: string | null
+  chat_type: string
+  document_id: string | null
+  message_count: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AdminConversationDetail {
+  id: string
+  title: string
+  user_id: string | null
+  chat_type: string
+  document_id: string | null
+  messages: Array<{
+    id: string
+    role: string
+    content: string
+    references: any
+    created_at: string
+  }>
+  created_at: string
+  updated_at: string
+}
+
+// ── Token types ──
+export interface TokenUsageRecord {
+  id: string
+  user_id: string
+  username: string | null
+  conversation_id: string | null
+  model_name: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  created_at: string | null
+}
+
+export interface TokenDailyStat {
+  date: string
+  tokens: number
+  turns: number
+}
+
+export interface TokenSummary {
+  total_prompt: number
+  total_completion: number
+  total_all: number
+  turn_count: number
+  daily: TokenDailyStat[]
+}
+
+export interface UserTokenSummary {
+  user_id: string
+  username: string
+  display_name: string | null
+  prompt_tokens: number
+  completion_tokens: number
+  total_tokens: number
+  turn_count: number
 }
 
 export const api = new ApiClient(API_BASE)

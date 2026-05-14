@@ -100,3 +100,17 @@ class Setting(Base):
     key = Column(String, primary_key=True)
     value = Column(Text, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class TokenUsage(Base):
+    """Token consumption per user per chat turn."""
+    __tablename__ = "token_usages"
+
+    id = Column(String, primary_key=True, default=generate_id)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(String, nullable=True)
+    model_name = Column(String, nullable=True)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)

@@ -30,6 +30,14 @@ export default function Nav() {
           <Link href="/settings" className={`${styles.link} ${pathname === "/settings" ? styles.linkActive : ""}`}>
             设置
           </Link>
+          <Link href="/token" className={`${styles.link} ${pathname === "/token" ? styles.linkActive : ""}`}>
+            Token
+          </Link>
+          {user?.is_admin && (
+            <Link href="/admin" className={`${styles.link} ${pathname === "/admin" ? styles.linkActive : ""}`}>
+              管理
+            </Link>
+          )}
         </div>
       </div>
       <div className={styles.right}>

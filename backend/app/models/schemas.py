@@ -179,3 +179,34 @@ class IndexStatusResponse(BaseModel):
     error_message: Optional[str] = None
 
 IndexNode.model_rebuild()
+
+# ── Admin schemas ──
+
+class UserToggleBody(BaseModel):
+    action: Literal["activate", "deactivate", "grant_admin", "revoke_admin"]
+
+
+# ── Token usage schemas ──
+
+class TokenUsageResponse(BaseModel):
+    id: str
+    user_id: str
+    username: Optional[str] = None
+    conversation_id: Optional[str] = None
+    model_name: Optional[str] = None
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class TokenSummaryResponse(BaseModel):
+    total_prompt: int
+    total_completion: int
+    total_all: int
+    turn_count: int
+    daily: List[dict]
+

@@ -1,0 +1,274 @@
+.container {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 32px 24px;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin: 0;
+}
+
+.controls {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.daysSelector {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #f5f5f7;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.dayBtn {
+  padding: 6px 14px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #666;
+  transition: color 0.15s;
+}
+
+.dayBtnActive {
+  background: #fff;
+  color: #333;
+  font-weight: 500;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.dayBtn:hover:not(.dayBtnActive) {
+  color: #333;
+}
+
+.filterSection {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.filterInput {
+  padding: 6px 12px;
+  border: 1px solid #e1e1e1;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  width: 160px;
+  transition: border-color 0.15s;
+}
+
+.filterInput:focus {
+  border-color: #0066cc;
+}
+
+.error {
+  background: #fff2f0;
+  color: #cf1322;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.loading {
+  text-align: center;
+  padding: 48px;
+  color: #888;
+}
+
+/* Summary row */
+.summaryRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  margin-bottom: 24px;
+  background: #fff;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  overflow: hidden;
+}
+
+.summaryItem {
+  padding: 20px 24px;
+  border-right: 1px solid #f0f0f0;
+  text-align: center;
+}
+
+.summaryItem:last-child {
+  border-right: none;
+}
+
+.summaryValue {
+  font-size: 26px;
+  font-weight: 600;
+  color: #0066cc;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.summaryLabel {
+  font-size: 12px;
+  color: #888;
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Table */
+.tableSection {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 1px solid #e1e1e1;
+}
+
+.sectionTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin: 0 0 0 0;
+  padding: 16px 24px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  background: #fafafa;
+  color: #888;
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table tr:hover td {
+  background: #fafafa;
+}
+
+.nameCell {
+  font-weight: 500;
+  color: #333;
+}
+
+.totalCell {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  color: #0066cc;
+}
+
+.noData {
+  text-align: center;
+  color: #888;
+  padding: 32px;
+}
+
+/* Ranking chart */
+.rankingChart {
+  background: #fff;
+  border-radius: 8px;
+  padding: 0;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  border: 1px solid #e1e1e1;
+}
+
+.horizontalBars {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 8px 24px 16px;
+}
+
+.hBarItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 0;
+}
+
+.hBarLabel {
+  min-width: 100px;
+  font-size: 13px;
+  color: #666;
+  text-align: right;
+}
+
+.hBarContainer {
+  flex: 1;
+  height: 20px;
+  background: #f5f5f5;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hBar {
+  height: 100%;
+  background: #0066cc;
+  border-radius: 3px;
+  min-width: 2px;
+}
+
+.hBarValue {
+  min-width: 80px;
+  font-size: 13px;
+  color: #0066cc;
+  font-weight: 500;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+@media (max-width: 640px) {
+  .summaryRow {
+    grid-template-columns: 1fr;
+  }
+  .summaryItem {
+    border-right: none;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .summaryItem:last-child {
+    border-bottom: none;
+  }
+  .controls {
+    align-items: flex-start;
+  }
+}
