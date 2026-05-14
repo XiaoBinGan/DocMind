@@ -189,51 +189,58 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             else:
                 context = doc_info
     
-    # ── Intent analysis + doc matching ──
+    # ── Intent analysis + doc matching (仅知识库模式) ──
+    is_general = (conv.chat_type == "general")
     intent_result = None
-    try:
-        from app.services.intent_service import analyze_intent
-        intent_result = await analyze_intent(request.message)
-    except Exception as exc:
-        import logging; logging.getLogger(__name__).warning("Intent analysis failed: %s", exc)
 
-    # Auto-select document if none specified
-    # For doc Q&A system: default to trying doc matching unless clearly general_chat
-    should_match_docs = False
-    if intent_result:
-        if intent_result.intent_type in ("doc_query", "doc_comparison"):
-            should_match_docs = True
-        elif intent_result.intent_type == "ambiguous":
-            should_match_docs = True
-    else:
-        should_match_docs = True
-
-    if not conv.document_id and should_match_docs:
+    if not is_general:
         try:
-            from app.services.doc_matcher import match_documents
-            matches = await match_documents(request.message, intent_result.keywords, db)
-            if matches:
-                best = matches[0]
-                conv.document_id = best.document_id
-                await db.flush()
-                # Build context for matched document
-                from app.services.indexer import PageRetriever
-                from app.services.parser import document_parser
-                doc_result = await db.execute(select(Document).where(Document.id == best.document_id))
-                doc = doc_result.scalar_one_or_none()
-                if doc and doc.index_tree:
-                    parsed = await document_parser.parse(doc.file_path)
-                    if parsed.get("success"):
-                        retriever = PageRetriever(doc.index_tree, parsed["pages"])
-                        retrieved = await retriever.retrieve(request.message, top_k=5)
-                        for r in retrieved:
-                            context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
-                            references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+            from app.services.intent_service import analyze_intent
+            intent_result = await analyze_intent(request.message)
         except Exception as exc:
-            import logging; logging.getLogger(__name__).warning("Doc matching failed: %s", exc)
+            import logging; logging.getLogger(__name__).warning("Intent analysis failed: %s", exc)
+
+        should_match_docs = False
+        if intent_result:
+            if intent_result.intent_type in ("doc_query", "doc_comparison"):
+                should_match_docs = True
+            elif intent_result.intent_type == "ambiguous":
+                should_match_docs = True
+        else:
+            should_match_docs = True
+
+        if not conv.document_id and should_match_docs:
+            try:
+                from app.services.doc_matcher import match_documents
+                matches = await match_documents(request.message, intent_result.keywords if intent_result else [], db)
+                if matches:
+                    best = matches[0]
+                    conv.document_id = best.document_id
+                    await db.flush()
+                    from app.services.indexer import PageRetriever
+                    from app.services.parser import document_parser
+                    doc_result = await db.execute(select(Document).where(Document.id == best.document_id))
+                    doc = doc_result.scalar_one_or_none()
+                    if doc and doc.index_tree:
+                        parsed = await document_parser.parse(doc.file_path)
+                        if parsed.get("success"):
+                            retriever = PageRetriever(doc.index_tree, parsed["pages"])
+                            retrieved = await retriever.retrieve(request.message, top_k=5)
+                            for r in retrieved:
+                                context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
+                                references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+            except Exception as exc:
+                import logging; logging.getLogger(__name__).warning("Doc matching failed: %s", exc)
 
     # Build prompt
-    system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
+    _is_general = (conv.chat_type == "general")
+    if _is_general:
+        system_prompt = """You are DocMind, a helpful AI assistant.
+Answer the user's question using your general knowledge.
+Always respond in the same language the user uses.
+Be concise and helpful."""
+    else:
+        system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
 Answer questions accurately based on document content when available.
 If no document context is provided, answer the user's question using your general knowledge.
 Always respond in the same language the user uses.
@@ -379,73 +386,73 @@ async def chat_stream(request: ChatRequest):
                         # 没有索引树时也附上文档名
                         context = doc_info
             
-            # ── Intent analysis + doc matching ──
+            # ── Intent analysis + doc matching (仅知识库模式) ──
+            is_general = (conv.chat_type == "general")
             intent_result = None
-            try:
-                from app.services.intent_service import analyze_intent, _quick_classify, extract_keywords
-                # Fast classification first (no LLM needed) for immediate UI feedback
-                quick = _quick_classify(request.message)
+
+            if not is_general:
                 try:
-                    kw = extract_keywords(request.message)
-                except Exception:
-                    kw = []
-                intent_result = IntentResult(
-                    intent_type=quick or "general_chat",
-                    confidence=0.9 if quick else 0.3,
-                    keywords=kw,
-                    reasoning="quick heuristic",
-                )
-                # Send intent immediately so frontend can show it right away
-                import json as _json
-                yield f"event: intent\ndata: {_json.dumps(intent_result.to_dict(), ensure_ascii=False)}\n\n"
-                
-                # Then try LLM-based refinement
-                try:
-                    intent_result = await analyze_intent(request.message)
-                    # Send refined intent to update frontend
+                    from app.services.intent_service import analyze_intent, _quick_classify, extract_keywords
+                    quick = _quick_classify(request.message)
+                    try:
+                        kw = extract_keywords(request.message)
+                    except Exception:
+                        kw = []
+                    intent_result = IntentResult(
+                        intent_type=quick or "general_chat",
+                        confidence=0.9 if quick else 0.3,
+                        keywords=kw,
+                        reasoning="quick heuristic",
+                    )
+                    import json as _json
                     yield f"event: intent\ndata: {_json.dumps(intent_result.to_dict(), ensure_ascii=False)}\n\n"
-                except Exception as exc:
-                    import logging as _log; _log.getLogger(__name__).warning("LLM intent refinement failed: %s", exc)
-            except Exception as exc:
-                import logging as _log; _log.getLogger(__name__).warning("Intent analysis failed: %s", exc)
 
-            # Auto-select document if none specified
-            # For doc Q&A system: default to trying doc matching unless clearly general_chat
-            should_match_docs = False
-            if intent_result:
-                if intent_result.intent_type in ("doc_query", "doc_comparison"):
-                    should_match_docs = True
-                elif intent_result.intent_type == "ambiguous":
-                    # In a doc Q&A system, ambiguous queries should try doc matching
-                    should_match_docs = True
-            else:
-                # No intent result — default to doc matching
-                should_match_docs = True
-
-            if not conv.document_id and should_match_docs:
-                try:
-                    from app.services.doc_matcher import match_documents
-                    matches = await match_documents(request.message, intent_result.keywords, session)
-                    if matches:
-                        best = matches[0]
-                        conv.document_id = best.document_id
-                        await session.commit()
-                        # Build context for matched document
-                        doc_result = await session.execute(select(Document).where(Document.id == best.document_id))
-                        doc = doc_result.scalar_one_or_none()
-                        if doc and doc.index_tree:
-                            parsed = await document_parser.parse(doc.file_path)
-                            if parsed.get("success"):
-                                retriever = PageRetriever(doc.index_tree, parsed["pages"])
-                                retrieved = await retriever.retrieve(request.message, top_k=5)
-                                for r in retrieved:
-                                    context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
-                                    references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+                    try:
+                        intent_result = await analyze_intent(request.message)
+                        yield f"event: intent\ndata: {_json.dumps(intent_result.to_dict(), ensure_ascii=False)}\n\n"
+                    except Exception as exc:
+                        import logging as _log; _log.getLogger(__name__).warning("LLM intent refinement failed: %s", exc)
                 except Exception as exc:
-                    import logging as _log; _log.getLogger(__name__).warning("Doc matching failed: %s", exc)
+                    import logging as _log; _log.getLogger(__name__).warning("Intent analysis failed: %s", exc)
+
+                should_match_docs = False
+                if intent_result:
+                    if intent_result.intent_type in ("doc_query", "doc_comparison"):
+                        should_match_docs = True
+                    elif intent_result.intent_type == "ambiguous":
+                        should_match_docs = True
+                else:
+                    should_match_docs = True
+
+                if not conv.document_id and should_match_docs:
+                    try:
+                        from app.services.doc_matcher import match_documents
+                        matches = await match_documents(request.message, intent_result.keywords if intent_result else [], session)
+                        if matches:
+                            best = matches[0]
+                            conv.document_id = best.document_id
+                            await session.commit()
+                            doc_result = await session.execute(select(Document).where(Document.id == best.document_id))
+                            doc = doc_result.scalar_one_or_none()
+                            if doc and doc.index_tree:
+                                parsed = await document_parser.parse(doc.file_path)
+                                if parsed.get("success"):
+                                    retriever = PageRetriever(doc.index_tree, parsed["pages"])
+                                    retrieved = await retriever.retrieve(request.message, top_k=5)
+                                    for r in retrieved:
+                                        context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
+                                        references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
+                    except Exception as exc:
+                        import logging as _log; _log.getLogger(__name__).warning("Doc matching failed: %s", exc)
 
             # Build prompt
-            system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
+            if is_general:
+                system_prompt = """You are DocMind, a helpful AI assistant.
+Answer the user's question using your general knowledge.
+Always respond in the same language the user uses.
+Be concise and helpful."""
+            else:
+                system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
 Answer questions accurately based on document content when available.
 If no document context is provided, answer the user's question using your general knowledge.
 Always respond in the same language the user uses.

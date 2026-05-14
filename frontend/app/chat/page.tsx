@@ -59,6 +59,12 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const streamContentRef = useRef("")
   const streamingRefsRef = useRef<Reference[] | null>(null)
+  const activeConvRef = useRef<Conversation | null>(null)
+
+  // 保持 ref 与 state 同步
+  useEffect(() => {
+    activeConvRef.current = activeConversation
+  }, [activeConversation])
 
   useEffect(() => {
     loadDocuments()
@@ -177,7 +183,7 @@ export default function ChatPage() {
         },
         (messageId, conversationId, refs) => {
           streamingRefsRef.current = refs
-          if (!activeConversation && conversationId) {
+          if (!activeConvRef.current && conversationId) {
             switchConversation({
               id: conversationId,
               title: userMessage.slice(0, 50) + "...",
@@ -235,6 +241,9 @@ export default function ChatPage() {
 
   const handleNewChat = () => {
     switchConversation(null)
+    setLastIntent(null)
+    setStreamContent("")
+    streamingRefsRef.current = null
   }
 
   const handleDeleteConversation = async (id: string) => {
@@ -369,7 +378,7 @@ export default function ChatPage() {
                 <MessageSquare size={48} />
               </div>
               <h2>开始对话</h2>
-              <p>{currentDocId ? "基于文档内容回答问题" : "选择左侧文档，或直接提问"}</p>
+              <p>{chatMode === "general" ? "通用 AI 对话" : currentDocId ? "基于文档内容回答问题" : "选择左侧文档，或直接提问"}</p>
             </div>
           ) : (
             <>
@@ -391,7 +400,7 @@ export default function ChatPage() {
                       )}
                     </div>
 
-                    {msg.role === "assistant" && (
+                    {msg.role === "assistant" && chatMode !== "general" && (
                       <div className={styles.references}>
                         <span className={styles.refLabel}>引用：</span>
                         {msg.references && msg.references.length > 0
@@ -436,7 +445,7 @@ export default function ChatPage() {
         </div>
 
         {/* 意图识别状态栏 — 固定在输入框上方 */}
-        {lastIntent && (
+        {lastIntent && chatMode !== "general" && (
           <div className={styles.intentBar}>
             <span
               className={styles.intentDot}
@@ -489,7 +498,7 @@ export default function ChatPage() {
             </button>
           </div>
           <p className={styles.inputHint}>
-            {currentDocId ? "基于文档内容回答" : "AI 将根据上下文或通用知识回答"}
+            {chatMode === "general" ? "通用 AI 对话，不引用文档" : currentDocId ? "基于文档内容回答" : "AI 将自动匹配知识库或使用通用知识回答"}
           </p>
         </div>
       </main>
