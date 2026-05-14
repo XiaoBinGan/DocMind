@@ -412,8 +412,6 @@ async def chat_stream(request: ChatRequest):
                         conv.document_id = best.document_id
                         await session.commit()
                         # Build context for matched document
-                        from app.services.indexer import PageRetriever
-                        from app.services.parser import document_parser
                         doc_result = await session.execute(select(Document).where(Document.id == best.document_id))
                         doc = doc_result.scalar_one_or_none()
                         if doc and doc.index_tree:
