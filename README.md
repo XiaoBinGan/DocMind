@@ -16,14 +16,26 @@
 
 ## ✨ 核心特性
 
+### 推理式检索
+
 | 特性 | 说明 |
 |------|------|
 | 🔮 **推理式检索** | 不依赖向量相似度，让 LLM 自主遍历索引树推理答案 |
 | 📑 **Marker 高质量解析** | PDF → Markdown，保留标题层级、表格、公式、代码块 |
 | 🌳 **智能索引树** | 自动从 Markdown 结构构建 ToC 树，模拟人读文档方式 |
-| 💬 **RAG 对话** | 基于文档内容的精准问答，支持流式输出 |
+| 💬 **RAG 对话** | 基于文档内容的精准问答，支持流式输出（SSE） |
 | 🤖 **多模型支持** | OpenAI / Anthropic / Qwen / 本地模型，可配置 |
-| 🎨 **深海洞穴主题** | Deep Ocean UI，沉浸式视觉体验 |
+
+### 用户系统
+
+| 特性 | 说明 |
+|------|------|
+| 🔐 **用户认证** | 注册 / 登录 / JWT 令牌认证 |
+| 👥 **角色管理** | 管理员 / 普通用户，细粒度权限控制 |
+| 💾 **数据隔离** | 文档、对话、记忆按用户隔离 |
+| 💰 **Token 追踪** | 每轮对话 token 用量统计，按用户/管理员双视角查看 |
+| 🌙 **深海洞穴主题** | Deep Ocean UI，沉浸式视觉体验 |
+| 🔒 **数据库配置** | 所有配置存储在数据库，零环境变量依赖 |
 
 ---
 
@@ -113,33 +125,7 @@ git clone https://github.com/XiaoBinGan/DocMind.git
 cd DocMind
 ```
 
-### 2. 配置后端
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-编辑 `.env`：
-
-```env
-# LLM 提供商 (openai / anthropic / ollama)
-LLM_PROVIDER=ollama
-
-# OpenAI 配置（如使用 OpenAI）
-OPENAI_API_KEY=sk-your-openai-key
-OPENAI_MODEL=gpt-4o-mini
-
-# Anthropic 配置（如使用 Claude）
-ANTHROPIC_API_KEY=sk-ant-your-key
-ANTHROPIC_MODEL=claude-3-haiku-20240307
-
-# Ollama 本地模型配置（默认）
-LOCAL_MODEL_URL=http://localhost:11434/v1
-LOCAL_MODEL_NAME=qwen3.5:9b
-```
-
-### 3. 安装依赖
+### 2. 安装依赖
 
 ```bash
 # 后端（推荐使用虚拟环境）
@@ -154,6 +140,8 @@ pip install -r requirements.txt
 cd ../frontend
 npm install
 ```
+
+> **注意**：DocMind 不再使用 `.env` 配置文件。所有配置（API Key、系统参数）均存储在数据库 settings 表中。首次启动时系统自动生成 JWT 密钥。
 
 ### 4. 启动服务
 
@@ -249,6 +237,36 @@ GET    /api/conversations           列出会话列表
 DELETE /api/conversations/{id}      删除会话
 ```
 
+### Token 用量追踪
+
+```
+GET    /api/token/usage              我的 Token 用量
+GET    /api/token/summary            我的 Token 汇总统计
+```
+
+> 所有 API 需要认证的请求均需在 Header 中携带 `Authorization: Bearer <token>`
+
+### 用户认证
+
+```
+POST   /api/auth/register          注册用户
+POST   /api/auth/login             用户登录
+GET    /api/auth/me                获取当前用户信息
+PATCH  /api/auth/me                更新用户信息
+POST   /api/auth/logout            退出登录
+```
+
+### 管理后台（需管理员权限）
+
+```
+GET    /api/auth/admin/users       获取所有用户
+PATCH  /api/auth/admin/users/{id}  更新用户（激活/禁用/管理员）
+GET    /api/auth/admin/conversations  获取所有对话
+GET    /api/auth/admin/conversations/{id}  获取对话详情
+GET    /api/auth/admin/summary     用户 Token 汇总统计
+GET    /api/auth/admin/usage       用户 Token 详细记录
+```
+
 ---
 
 ## 🛠️ 扩展开发
@@ -284,10 +302,12 @@ async def _parse_xxx(file_path: str) -> dict:
 
 | 层级 | 技术 |
 |------|------|
-| **前端** | Next.js 15, React 19, TypeScript, Tailwind CSS, Zustand |
+| **前端** | Next.js 14, React 18, TypeScript, CSS Variables |
 | **后端** | FastAPI 0.109, SQLAlchemy, aiosqlite, Pydantic |
 | **文档解析** | Marker (PDF→Markdown), PyPDF2, python-docx |
-| **LLM** | OpenAI SDK, Anthropic SDK, 通义千问 SDK |
+| **LLM** | OpenAI SDK, Anthropic SDK, 通义千问 SDK, Ollama |
+| **认证** | JWT (JSON Web Token), bcrypt 密码哈希 |
+| **数据库** | SQLite (WAL 模式，数据配置化) |
 | **部署** | 单机运行，支持 Docker（可选） |
 
 ---
@@ -296,8 +316,11 @@ async def _parse_xxx(file_path: str) -> dict:
 
 ### API 认证与授权
 
-- **环境变量隔离**：所有 API Key 存储在 `.env` 文件中，不提交到版本控制
-- **请求验证**：FastAPI 使用 Pydantic 自动验证请求数据类型和范围
+- **JWT 令牌认证**：所有需要认证的请求需在 Header 中携带 `Authorization: Bearer <token>`
+- **JWT 密钥**：首次启动时自动生成并存入数据库 settings 表，不再依赖环境变量
+- **密码存储**：bcrypt 哈希加密，不可逆
+- **角色权限控制**：管理员 API（用户管理、Token 统计）需 `is_admin=True`
+- **数据隔离**：文档、对话、记忆按 `user_id` 严格隔离，用户仅能访问自己的数据
 - **CORS 配置**：前端跨域请求受限，仅允许配置的源
 
 ### 数据保护
@@ -311,7 +334,7 @@ async def _parse_xxx(file_path: str) -> dict:
 
 ### LLM API 安全
 
-- **密钥管理**：API Key 仅在后端使用，前端无法访问
+- **密钥管理**：API Key 存储在数据库 settings 中，不暴露给前端
 - **请求签名**：支持配置 API 请求签名验证
 - **速率限制**：可配置 LLM 调用频率限制，防止滥用
 - **日志脱敏**：敏感信息（API Key、用户数据）不记录到日志
