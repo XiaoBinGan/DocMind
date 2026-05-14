@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -13,16 +14,39 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.database import User
+from app.models.database import User, Setting
 
 logger = logging.getLogger(__name__)
 
 # ── JWT config ──────────────────────────────────────────────────────────
-SECRET_KEY = getattr(settings, "JWT_SECRET_KEY", "") or "docmind-default-secret-change-me-2024"
+JWT_SECRET_KEY_DB = "jwt_secret_key"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
-# ── Password hashing ────────────────────────────────────────────────────
+# Lazy secret resolution
+_secret_key: Optional[str] = None
+
+
+def _resolve_secret_key():
+    """Resolve JWT secret from settings DB or generate new one."""
+    global _secret_key
+    if _secret_key:
+        return _secret_key
+    from app.services.settings_service import settings_service
+    if settings_service and settings_service.ready and settings_service._cache:
+        val = settings_service._cache.get(JWT_SECRET_KEY_DB, "")
+        if val and len(val) >= 32:
+            _secret_key = val
+            return val
+    # Generate new key
+    _secret_key = secrets.token_hex(32)
+    return _secret_key
+
+
+SECRET_KEY = _resolve_secret_key()
+
+
+# ── Password hashing ───────────────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── FastAPI security scheme ─────────────────────────────────────────────
@@ -109,6 +133,30 @@ async def get_current_user(
             detail="User not found or inactive",
         )
     return user
+
+
+async def ensure_jwt_secret_key():
+    """Ensure a JWT secret key exists in the settings DB. Generate one if not."""
+    from app.main import async_session_maker
+    from app.services.settings_service import settings_service
+    async with async_session_maker() as session:
+        row = await session.get(Setting, JWT_SECRET_KEY_DB)
+        if not row or not row.value or len(row.value) < 32:
+            new_key = secrets.token_hex(32)
+            if row:
+                row.value = new_key
+            else:
+                session.add(Setting(key=JWT_SECRET_KEY_DB, value=new_key))
+            await session.commit()
+            # Update cache
+            if settings_service and settings_service.ready:
+                settings_service._cache[JWT_SECRET_KEY_DB] = new_key
+            global _SECRET_KEY
+            _SECRET_KEY = new_key
+            logger.info("JWT secret key generated and stored in DB")
+        else:
+            if settings_service and settings_service.ready:
+                settings_service._cache[JWT_SECRET_KEY_DB] = row.value
 
 
 async def ensure_default_admin():

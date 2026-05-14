@@ -75,6 +75,7 @@ class DocumentResponse(BaseModel):
     file_size: int
     page_count: int
     index_status: Literal["pending", "indexing", "ready", "error"]
+    user_id: Optional[str] = None
     index_tree: Optional[IndexNode] = None
     error_message: Optional[str] = None
     created_at: datetime
@@ -173,7 +174,8 @@ class MemoryStatsResponse(BaseModel):
 class IndexStatusResponse(BaseModel):
     document_id: str
     status: Literal["pending", "indexing", "ready", "error"]
-    progress: Optional[float] = None
+    progress: Optional[int] = None
+    started_at: Optional[datetime] = None
     error_message: Optional[str] = None
 
 IndexNode.model_rebuild()
