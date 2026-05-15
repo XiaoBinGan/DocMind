@@ -21,7 +21,6 @@ async def _enable_wal():
         await conn.execute(text("PRAGMA busy_timeout=5000"))
 
 import asyncio
-asyncio.create_task(_enable_wal())
 
 # Export for use in routers
 async_session_maker = async_session_maker
@@ -51,6 +50,9 @@ async def init_db():
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     # Startup
+    # Enable WAL mode for better concurrent access
+    await _enable_wal()
+    
     await init_db()
 
     # Initialize settings service with session maker
@@ -82,7 +84,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

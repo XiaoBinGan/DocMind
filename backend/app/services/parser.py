@@ -16,6 +16,7 @@ class DocumentParser:
     # Marker 是否可用（运行时检测）
     _marker_available = None
     _marker_models_loaded = False
+    _marker_artifact_dict = None  # 缓存已加载的模型字典
     
     @staticmethod
     def get_supported_types() -> List[str]:
@@ -42,15 +43,15 @@ class DocumentParser:
     
     @staticmethod
     async def _parse_pdf(file_path: str) -> dict:
-        """Parse PDF file using Marker (preferred) or PyPDF2 (fallback)."""
+        """Parse PDF file using Marker (preferred) or pypdf (fallback)."""
         
         # 尝试用 Marker 解析
         marker_result = await DocumentParser._parse_pdf_marker(file_path)
         if marker_result:
             return marker_result
         
-        # 回退到 PyPDF2
-        return await DocumentParser._parse_pdf_pypdf2(file_path)
+        # 回退到 pypdf
+        return await DocumentParser._parse_pdf_pypdf(file_path)
     
     @staticmethod
     async def _parse_pdf_marker(file_path: str) -> Optional[dict]:
@@ -64,28 +65,23 @@ class DocumentParser:
             return None
         
         try:
-            # 延迟导入和加载模型
+            # 延迟导入和加载模型（只加载一次，后续复用 artifact_dict）
             if not DocumentParser._marker_models_loaded:
                 from marker.models import create_model_dict
-                from marker.converters.pdf import PdfConverter
-                from marker.renderers.markdown import MarkdownRenderer
-                
+
                 # 设置缓存路径
                 os.environ.setdefault("HF_HOME", MARKER_CACHE_DIR)
-                
+
                 print("Loading Marker models...")
-                models = create_model_dict()
+                DocumentParser._marker_artifact_dict = create_model_dict()
                 DocumentParser._marker_models_loaded = True
-                print(f"Marker models loaded: {list(models.keys())}")
-            
+                print(f"Marker models loaded: {list(DocumentParser._marker_artifact_dict.keys())}")
+
             from marker.converters.pdf import PdfConverter
-            from marker.renderers.markdown import MarkdownRenderer
-            from marker.models import create_model_dict
-            
-            # 创建 converter
+
+            # 创建 converter — renderer 默认为 MarkdownRenderer（无需传参）
             converter = PdfConverter(
-                create_model_dict(),
-                MarkdownRenderer()
+                DocumentParser._marker_artifact_dict
             )
             
             # 转换 PDF
@@ -111,9 +107,18 @@ class DocumentParser:
                 "markdown": markdown_text  # 保留完整 Markdown
             }
             
-        except Exception as e:
-            print(f"Marker parsing failed: {e}")
+        except OSError as e:
+            # [Errno 28] No space left on device — graceful fallback, don't permanently disable
+            if e.errno == 28:
+                print(f"Marker failed (disk space issue): {e}. Falling back to pypdf.")
+                return None
+            # 其他 OSError 也走 fallback，但临时禁用 Marker（可能是临时文件/权限问题）
+            print(f"Marker OS error: {e}. Falling back to pypdf.")
             DocumentParser._marker_available = False
+            return None
+        except Exception as e:
+            # 其他未知异常 → fallback，不永久禁用（可能是 PDF 内容问题）
+            print(f"Marker parsing failed: {e}. Falling back to pypdf.")
             return None
     
     @staticmethod
@@ -192,14 +197,12 @@ class DocumentParser:
             return False
     
     @staticmethod
-    async def _parse_pdf_pypdf2(file_path: str) -> dict:
-        """Parse PDF file using PyPDF2 (fallback)."""
+    async def _parse_pdf_pypdf(file_path: str) -> dict:
+        """Parse PDF file using pypdf (fallback)."""
         try:
-            from PyPDF2 import PdfReader
+            import pypdf
             
-            reader = PdfReader(file_path)
-            if reader.is_encrypted:
-                reader.decrypt('')
+            reader = pypdf.PdfReader(file_path)
             pages = []
             
             for i, page in enumerate(reader.pages):
@@ -215,7 +218,7 @@ class DocumentParser:
                 "page_count": len(pages),
                 "pages": pages,
                 "title": Path(file_path).stem,
-                "parser": "pypdf2"
+                "parser": "pypdf"
             }
         except Exception as e:
             return {
