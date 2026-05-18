@@ -116,6 +116,9 @@ export default function ChatPage() {
   const [documents, setDocuments] = useState<Document[]>([])
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null)
+  const [activeConvId, setActiveConvId] = useState<string | null>(
+    typeof window !== "undefined" ? localStorage.getItem("docmind_active_conv_id") : null
+  )
   const [currentDocId, setCurrentDocId] = useState<string | null>(initialDocId)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState("")
@@ -149,6 +152,19 @@ export default function ChatPage() {
   useEffect(() => {
     loadDocuments()
     loadConversations()
+    // 恢复上次活跃的对话
+    if (activeConvId) {
+      setTimeout(async () => {
+        try {
+          const result = await api.getConversation(activeConvId)
+          setActiveConversation(result)
+          setMessages(result.messages || [])
+        } catch (e) {
+          console.error("Failed to restore conversation:", e)
+          localStorage.removeItem("docmind_active_conv_id")
+        }
+      }, 100)
+    }
   }, [])
 
   const loadDocuments = async () => {
@@ -179,6 +195,12 @@ export default function ChatPage() {
 
   const switchConversation = useCallback((conv: Conversation | null) => {
     setActiveConversation(conv)
+    setActiveConvId(conv?.id || null)
+    if (conv) {
+      localStorage.setItem("docmind_active_conv_id", conv.id)
+    } else {
+      localStorage.removeItem("docmind_active_conv_id")
+    }
     setMessages(conv?.messages ?? [])
     setLastIntent(null)
     setStreamContent("")
@@ -208,6 +230,19 @@ export default function ChatPage() {
   useEffect(() => {
     loadConversations()
   }, [chatMode])
+
+  // 切换模式/文档时，如果旧对话不匹配则清除
+  useEffect(() => {
+    if (activeConversation) {
+      const isGeneral = activeConversation.chat_type === 'general'
+      const isDocChat = activeConversation.chat_type === 'doc_chat'
+      const modeMatches = chatMode === 'general' ? isGeneral : isDocChat
+      const docMatches = currentDocId ? activeConversation.document_id === currentDocId : !activeConversation.document_id
+      if (!modeMatches || !docMatches) {
+        switchConversation(null)
+      }
+    }
+  }, [chatMode, currentDocId])
 
   const handleCopy = useCallback(async (msgId: string, content: string) => {
     try {
@@ -268,6 +303,7 @@ export default function ChatPage() {
               id: conversationId,
               title: userMessage.slice(0, 50) + "...",
               document_id: currentDocId,
+              chat_type: chatMode,
               messages: [],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
@@ -362,7 +398,16 @@ export default function ChatPage() {
         <div className={styles.modeTabs}>
           <button
             className={`${styles.modeTab} ${chatMode === "general" ? styles.modeTabActive : ""}`}
-            onClick={() => { setChatMode("general"); setCurrentDocId(null); setShowDocList(false); setActiveConversation(null); setMessages([]); setLastIntent(null) }}
+            onClick={() => {
+              setChatMode("general")
+              setCurrentDocId(null)
+              setShowDocList(false)
+              setActiveConversation(null)
+              setActiveConvId(null)
+              setMessages([])
+              setLastIntent(null)
+              localStorage.removeItem("docmind_active_conv_id")
+            }}
           >
             <MessageSquare size={14} />
             通用聊天
@@ -373,8 +418,10 @@ export default function ChatPage() {
               setChatMode("doc_chat")
               setShowDocList(true)
               setActiveConversation(null)
+              setActiveConvId(null)
               setMessages([])
               setLastIntent(null)
+              localStorage.removeItem("docmind_active_conv_id")
             }}
           >
             <BookOpen size={14} />

@@ -27,6 +27,7 @@ export interface Conversation {
   id: string
   title: string
   document_id: string | null
+  chat_type: string
   messages: Message[]
   created_at: string
   updated_at: string
