@@ -754,13 +754,13 @@
 .md h1 {
   font-size: 1.4em;
   padding-bottom: 0.3em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(0, 201, 255, 0.15);
 }
 
 .md h2 {
   font-size: 1.25em;
   padding-bottom: 0.2em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(0, 201, 255, 0.1);
 }
 
 .md h3 {
@@ -799,8 +799,8 @@
 
 /* 代码块 */
 .md pre {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 8px;
   padding: 0.85em 1em;
   overflow-x: auto;
@@ -829,9 +829,14 @@
   border-left: 3px solid var(--accent-primary);
   margin: 0.75em 0;
   padding: 0.35em 0.85em;
-  background: rgba(0, 201, 255, 0.04);
+  background: rgba(0, 201, 255, 0.06);
   border-radius: 0 6px 6px 0;
   color: var(--text-secondary);
+}
+
+.md blockquote blockquote {
+  margin-top: 0.5em;
+  background: rgba(0, 201, 255, 0.03);
 }
 
 .md blockquote p {
@@ -877,12 +882,15 @@
 
 /* 表格 */
 .md table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   width: 100%;
   margin: 0.75em 0;
   font-size: 0.88em;
   display: block;
   overflow-x: auto;
+  border: 1px solid rgba(0, 201, 255, 0.15);
+  border-radius: 8px;
 }
 
 .md table::-webkit-scrollbar {
@@ -895,21 +903,21 @@
 }
 
 .md thead {
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(0, 201, 255, 0.06);
 }
 
 .md th {
   font-weight: 600;
   text-align: left;
   padding: 0.5em 0.75em;
-  border-bottom: 2px solid var(--border);
+  border-bottom: 2px solid rgba(0, 201, 255, 0.2);
   color: var(--text-primary);
   white-space: nowrap;
 }
 
 .md td {
   padding: 0.45em 0.75em;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   color: var(--text-secondary);
 }
 
@@ -918,7 +926,7 @@
 }
 
 .md tr:hover td {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(0, 201, 255, 0.04);
 }
 
 /* 链接 */
@@ -948,7 +956,31 @@
   margin: 1.5em 0;
   border: none;
   height: 1px;
-  background: linear-gradient(90deg, transparent, var(--border), transparent);
+  background: linear-gradient(90deg, transparent, rgba(0, 201, 255, 0.25), transparent);
+}
+
+/* Mermaid 图表容器 */
+.md [data-mermaid] {
+  display: flex;
+  justify-content: center;
+  margin: 1em 0;
+  padding: 1em;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.md [data-mermaid] svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.md [data-mermaid] .node rect,
+.md [data-mermaid] .node circle,
+.md [data-mermaid] .node polygon {
+  stroke: var(--accent-primary);
+  stroke-width: 2px;
 }
 
 /* 流式打字光标 */

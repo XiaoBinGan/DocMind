@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect, useRef, useCallback, memo } from "react"
+import { useState, useEffect, useRef, useCallback, memo, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
-import ReactMarkdown from "react-markdown"
+import ReactMarkdown, { type Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import {
@@ -11,7 +11,15 @@ import {
 } from "lucide-react"
 import { api, Document, Conversation, Message, Reference, IntentResult } from "@/lib/api"
 import Nav from "@/components/nav"
+import { rehypeMermaidBlock } from "@/app/components/chat/rehype-mermaid-block"
+import dynamic from "next/dynamic"
 import styles from "./page.module.css"
+
+// Dynamic import MermaidBlock to avoid SSR issues
+const MermaidBlock = dynamic(
+  () => import("@/app/components/chat/mermaid-block"),
+  { ssr: false }
+)
 
 /* ================================================================
    Markdown 渲染器
@@ -24,13 +32,78 @@ const INTENT_LABELS: Record<string, { label: string; color: string }> = {
   ambiguous: { label: "待定", color: "#8b5cf6" },
 }
 
-const MarkdownContent = memo(({ content, streaming = false }: { content: string; streaming?: boolean }) => (
-  <div className={`${styles.md} ${streaming ? styles.mdStreaming : ""}`}>
-    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-      {content}
-    </ReactMarkdown>
-  </div>
-))
+/**
+ * Streaming markdown preprocessing:
+ * - Closes unclosed code fences so partial blocks render correctly
+ * - Ensures trailing newlines don't create empty paragraphs
+ */
+function prepareStreamingMarkdown(content: string): string {
+  if (!content) return content
+  // Count code fence markers (```) to detect unclosed blocks
+  // Match lines that start with ``` (possibly followed by a language tag)
+  const fenceMatches = content.match(/^```[\w]*\s*$/gm)
+  const fenceCount = fenceMatches ? fenceMatches.length : 0
+  if (fenceCount % 2 !== 0) {
+    // Odd number of fences → the last fence is an unclosed opening block
+    // Append a closing fence so the markdown parser renders it correctly
+    const lastFenceIdx = content.lastIndexOf("```")
+    const afterLastFence = content.substring(lastFenceIdx + 3).trimStart()
+    // Only close if the content after the last fence doesn't already have a closing fence
+    // (e.g. the stream just arrived a complete block)
+    if (!afterLastFence.startsWith("```")) {
+      content += "\n```"
+    }
+  }
+  return content
+}
+
+// Custom code component to handle mermaid blocks
+const CodeBlock = memo(({ className, children, ...props }: any) => {
+  const isMermaid = props["dataMermaid"]
+  const codeStr = String(children).replace(/\n$/, "")
+
+  if (isMermaid) {
+    return <MermaidBlock code={codeStr} />
+  }
+
+  return (
+    <code className={className} {...props}>
+      {children}
+    </code>
+  )
+})
+CodeBlock.displayName = "CodeBlock"
+
+// Custom pre component to pass through mermaid data attribute
+const PreBlock = memo(({ children, ...props }: any) => {
+  if (props["dataMermaid"]) {
+    return <>{children}</>
+  }
+  return <pre {...props}>{children}</pre>
+})
+PreBlock.displayName = "PreBlock"
+
+const markdownComponents: Components = {
+  code: CodeBlock,
+  pre: PreBlock,
+}
+
+const rehypePlugins = [rehypeHighlight, rehypeMermaidBlock]
+
+const MarkdownContent = memo(({ content, streaming = false }: { content: string; streaming?: boolean }) => {
+  const processed = streaming ? prepareStreamingMarkdown(content) : content
+  return (
+    <div className={`${styles.md} ${streaming ? styles.mdStreaming : ""}`}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={rehypePlugins}
+        components={markdownComponents}
+      >
+        {processed}
+      </ReactMarkdown>
+    </div>
+  )
+})
 MarkdownContent.displayName = "MarkdownContent"
 
 /* ================================================================

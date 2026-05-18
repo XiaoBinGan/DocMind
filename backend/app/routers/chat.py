@@ -413,7 +413,10 @@ async def chat_stream(
                 try:
                     async for chunk in llm_service.generate(system_prompt, user_prompt, stream=True):
                         full_response += chunk
-                        yield f"event: chunk\ndata: {chunk}\n\n"
+                        # JSON-encode chunk to keep the data line single-line.
+                        # Newlines inside chunk are escaped as \n in JSON, so SSE
+                        # parsing is safe and the frontend can JSON-decode to restore them.
+                        yield f"event: chunk\ndata: {_json.dumps({'t': chunk}, ensure_ascii=False)}\n\n"
                         await asyncio.sleep(0)
                 except Exception as exc:
                     if not full_response:

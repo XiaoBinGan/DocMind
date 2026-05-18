@@ -45,7 +45,7 @@ def _filter_think_tokens(text: str) -> str:
     """Remove <think/></think/ thinks...  artifacts and zero-width spaces."""
     text = re.sub(r"<think[^>]*>.*?</think\s*>", "", text, flags=re.DOTALL)
     text = text.replace("\u200b", "")
-    return text.strip()
+    return text
 
 
 class LLMService:

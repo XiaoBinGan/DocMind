@@ -233,8 +233,16 @@ class ApiClient {
           if (!data) continue
 
           if (currentEvent === "chunk") {
-            onChunk(data)
-          } else if (currentEvent === "references") {
+            // Backend sends JSON-encoded chunk: {"t": "..."}
+            // JSON decoding preserves newlines inside the text.
+            try {
+              const parsed = JSON.parse(data)
+              onChunk(parsed.t || "")
+            } catch {
+              onChunk(data)
+            }
+          }
+          if (currentEvent === "references") {
             try { references = JSON.parse(data) } catch { references = null }
           } else if (currentEvent === "intent") {
             try { 
@@ -266,8 +274,15 @@ class ApiClient {
       if (finalLines[i].startsWith("data:")) {
         const data = finalLines[i].slice(5).trim()
         if (!data) continue
-        if (currentEvent === "chunk") onChunk(data)
-        else if (currentEvent === "references") {
+        if (currentEvent === "chunk") {
+          try {
+            const parsed = JSON.parse(data)
+            onChunk(parsed.t || "")
+          } catch {
+            onChunk(data)
+          }
+        }
+        if (currentEvent === "references") {
           try { references = JSON.parse(data) } catch { references = null }
         }
         else if (currentEvent === "intent") {
