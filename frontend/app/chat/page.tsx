@@ -137,6 +137,16 @@ export default function ChatPage() {
   }
   const [lastIntent, setLastIntent] = useState<IntentResult | null>(null)
   const [chatMode, setChatMode] = useState<"general" | "doc_chat">("general")
+  const [modeReady, setModeReady] = useState(false)
+
+  // Hydration-safe: read localStorage after mount, then reveal tabs
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("docmind_chat_mode") as "general" | "doc_chat" | null
+      if (stored) setChatMode(stored)
+    } catch {}
+    setModeReady(true)
+  }, [])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -157,7 +167,11 @@ export default function ChatPage() {
       setTimeout(async () => {
         try {
           const result = await api.getConversation(activeConvId)
-          setActiveConversation(result)
+          if (result.chat_type === 'doc_chat') {
+          setChatMode("doc_chat")
+        } else {
+          setChatMode("general")
+        }
           setMessages(result.messages || [])
         } catch (e) {
           console.error("Failed to restore conversation:", e)
@@ -194,7 +208,13 @@ export default function ChatPage() {
   }
 
   const switchConversation = useCallback((conv: Conversation | null) => {
-    setActiveConversation(conv)
+    if (conv?.chat_type === 'doc_chat') {
+      setChatMode("doc_chat")
+      localStorage.setItem("docmind_chat_mode", "doc_chat")
+    } else {
+      setChatMode("general")
+      localStorage.setItem("docmind_chat_mode", "general")
+    }
     setActiveConvId(conv?.id || null)
     if (conv) {
       localStorage.setItem("docmind_active_conv_id", conv.id)
@@ -395,11 +415,13 @@ export default function ChatPage() {
         </div>
 
         {/* 模式切换 Tab */}
+        {modeReady ? (
         <div className={styles.modeTabs}>
           <button
             className={`${styles.modeTab} ${chatMode === "general" ? styles.modeTabActive : ""}`}
             onClick={() => {
               setChatMode("general")
+              localStorage.setItem("docmind_chat_mode", "general")
               setCurrentDocId(null)
               setShowDocList(false)
               setActiveConversation(null)
@@ -416,6 +438,7 @@ export default function ChatPage() {
             className={`${styles.modeTab} ${chatMode === "doc_chat" ? styles.modeTabActive : ""}`}
             onClick={() => {
               setChatMode("doc_chat")
+              localStorage.setItem("docmind_chat_mode", "doc_chat")
               setShowDocList(true)
               setActiveConversation(null)
               setActiveConvId(null)
@@ -428,6 +451,7 @@ export default function ChatPage() {
             知识库
           </button>
         </div>
+        ) : <div className={styles.modeTabs} style={{ visibility: "hidden" }}><button className={styles.modeTab} style={{ width: 80 }} /></div>}
 
         {/* 知识库文档选择器 */}
         {showDocList && (
