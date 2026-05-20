@@ -36,7 +36,7 @@ export function useAuth() {
   return ctx
 }
 
-const PUBLIC_PATHS = ["/", "/login", "/register"]
+const PUBLIC_PATHS = ["/", "/login", "/register", "/api-catalog"]
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()

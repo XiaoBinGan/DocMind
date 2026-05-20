@@ -500,3 +500,167 @@ export interface UserTokenSummary {
 }
 
 export const api = new ApiClient(API_BASE)
+
+// ── API Catalog types ──
+export interface ApiDefinition {
+  id: string
+  name: string
+  description: string
+  base_url: string
+  method: string
+  path: string
+  headers: Record<string, string>
+  body_schema: Record<string, unknown>
+  auth_type: string
+  auth_header: string
+  timeout_ms: number
+  enabled: number
+  example_queries: string[]
+  expected_response: Record<string, unknown>
+  created_at: string | null
+  updated_at: string | null
+  created_by: string
+}
+
+export interface ChainMember {
+  id: string
+  order: number
+  api_id: string
+  api_name: string
+  input_mapping: Record<string, unknown>
+  output_mapping: Record<string, unknown>
+  created_at: string | null
+}
+
+export interface SerialChain {
+  id: string
+  name: string
+  description: string
+  steps_count: number
+  enabled: number
+  members: ChainMember[]
+  created_at: string | null
+  updated_at: string | null
+  created_by: string
+}
+
+export interface IntentSuggestion {
+  type: string
+  confidence: number
+  target_id: string | null
+  target_name: string
+  explanation: string
+  example_queries: string[]
+}
+
+// ── API Catalog methods ──
+const API_CATALOG_BASE = "/api-catalog"
+
+export const apiCatalog = {
+  async list(): Promise<ApiDefinition[]> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async get(id: string): Promise<ApiDefinition> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/${id}`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async create(data: Record<string, unknown>): Promise<ApiDefinition> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async update(id: string, data: Record<string, unknown>): Promise<ApiDefinition> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async delete(id: string): Promise<{ deleted: boolean }> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/${id}`, {
+      method: "DELETE",
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async toggle(id: string, enabled: boolean): Promise<ApiDefinition> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/${id}/toggle?enabled=${enabled}`, {
+      method: "PATCH",
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async search(keyword: string): Promise<ApiDefinition[]> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/search?keyword=${encodeURIComponent(keyword)}`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+}
+
+// ── Chains methods ──
+export const chains = {
+  async list(): Promise<SerialChain[]> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/chains`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async get(id: string): Promise<SerialChain> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/chains/${id}`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async create(data: Record<string, unknown>): Promise<SerialChain> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/chains`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async update(id: string, data: Record<string, unknown>): Promise<SerialChain> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/chains/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async delete(id: string): Promise<{ deleted: boolean }> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/chains/${id}`, {
+      method: "DELETE",
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+
+  async execute(id: string, input: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/chains/${id}/execute`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ input_data: input }),
+    })
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
+}

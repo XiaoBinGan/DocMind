@@ -24,6 +24,9 @@ export default function Nav() {
           <Link href="/documents" className={`${styles.link} ${pathname === "/documents" ? styles.linkActive : ""}`}>
             文档
           </Link>
+          <Link href="/api-catalog" className={`${styles.link} ${pathname === "/api-catalog" ? styles.linkActive : ""}`}>
+            API
+          </Link>
           <Link href="/memory" className={`${styles.link} ${pathname === "/memory" ? styles.linkActive : ""}`}>
             记忆
           </Link>

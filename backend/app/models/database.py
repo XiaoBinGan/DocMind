@@ -114,3 +114,72 @@ class TokenUsage(Base):
     completion_tokens = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ============ API Registration Models ============
+
+
+class ApiDefinition(Base):
+    __tablename__ = "api_definitions"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, default="")
+    base_url = Column(String(500), nullable=False)
+    method = Column(String(10), default="GET")  # GET, POST, PUT, DELETE, PATCH
+    path = Column(String(500), default="/")
+    headers = Column(Text, default="{}")  # JSON string
+    body_schema = Column(Text, default="{}")  # JSON string
+    auth_type = Column(String(20), default="none")  # none, bearer, basic, api_key
+    auth_header = Column(String(100), default="")
+    timeout_ms = Column(Integer, default=30000)
+    enabled = Column(Integer, default=1)
+    example_queries = Column(Text, default="[]")  # JSON string
+    expected_response = Column(Text, default="{}")  # JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(String(100), default="admin")
+
+
+class SerialChain(Base):
+    __tablename__ = "serial_chains"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(200), nullable=False, index=True)
+    description = Column(Text, default="")
+    steps_count = Column(Integer, default=0)
+    enabled = Column(Integer, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_by = Column(String(100), default="admin")
+    
+    members = relationship("SerialChainMember", back_populates="chain", cascade="all, delete-orphan")
+
+
+class SerialChainMember(Base):
+    __tablename__ = "serial_chain_members"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    chain_id = Column(String, ForeignKey("serial_chains.id"), nullable=False, index=True)
+    order = Column(Integer, nullable=False)  # 1, 2, 3...
+    api_id = Column(String, ForeignKey("api_definitions.id"), nullable=False)
+    input_mapping = Column(Text, default="{}")  # JSON string, how to map previous output to this input
+    output_mapping = Column(Text, default="{}")  # JSON string
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    chain = relationship("SerialChain", back_populates="members")
+    api = relationship("ApiDefinition")
+
+
+class ApiUsageLog(Base):
+    __tablename__ = "api_usage_logs"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    chain_id = Column(String, ForeignKey("serial_chains.id"), nullable=True)
+    api_id = Column(String, ForeignKey("api_definitions.id"), nullable=True)
+    request_payload = Column(Text, default="{}")
+    response_payload = Column(Text, default="{}")
+    status_code = Column(Integer)
+    duration_ms = Column(Integer)
+    error = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)

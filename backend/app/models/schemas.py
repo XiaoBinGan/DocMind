@@ -210,3 +210,150 @@ class TokenSummaryResponse(BaseModel):
     turn_count: int
     daily: List[dict]
 
+
+# ========== API Registration Schemas ==========
+from pydantic import ConfigDict
+
+
+class ApiDefinitionBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = ""
+    base_url: str = Field(..., min_length=1, max_length=500)
+    method: str = "GET"
+    path: str = "/"
+    headers: dict = Field(default_factory=dict)
+    body_schema: dict = Field(default_factory=dict)
+    auth_type: str = "none"
+    auth_header: str = ""
+    timeout_ms: int = 30000
+
+
+class ApiDefinitionCreate(ApiDefinitionBase):
+    pass
+
+
+class ApiDefinitionUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    base_url: str | None = None
+    method: str | None = None
+    path: str | None = None
+    headers: dict | None = None
+    body_schema: dict | None = None
+    auth_type: str | None = None
+    auth_header: str | None = None
+    timeout_ms: int | None = None
+    enabled: bool | None = None
+    example_queries: list[str] | None = None
+    expected_response: dict | None = None
+
+
+class ApiDefinitionResponse(ApiDefinitionBase):
+    id: str
+    enabled: int
+    example_queries: list[str] = []
+    expected_response: dict = {}
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str = ""
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SerialChainBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    description: str = ""
+    members: list["ChainMemberCreate"] = []
+
+
+class SerialChainCreate(SerialChainBase):
+    pass
+
+
+class ChainMemberCreate(BaseModel):
+    order: int
+    api_id: str
+    input_mapping: dict = Field(default_factory=dict)
+    output_mapping: dict = Field(default_factory=dict)
+
+
+class ChainMemberResponse(BaseModel):
+    id: str
+    order: int
+    api_id: str
+    api_name: str
+    input_mapping: dict = {}
+    output_mapping: dict = {}
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SerialChainResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    steps_count: int
+    enabled: int
+    members: list[ChainMemberResponse] = []
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    created_by: str = ""
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ApiUsageLogCreate(BaseModel):
+    chain_id: str | None = None
+    api_id: str | None = None
+    request_payload: dict = Field(default_factory=dict)
+    response_payload: dict = Field(default_factory=dict)
+    status_code: int | None = None
+    duration_ms: int | None = None
+    error: str = ""
+
+
+class ApiUsageLogResponse(BaseModel):
+    id: str
+    chain_id: str | None
+    api_id: str | None
+    status_code: int | None
+    duration_ms: int | None
+    error: str
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class IntentSuggestion(BaseModel):
+    type: str  # "api" or "chain"
+    confidence: float
+    target_id: str | None = None
+    target_name: str
+    explanation: str
+    example_queries: list[str] = []
+
+
+class ChainExecuteRequest(BaseModel):
+    input_data: dict = Field(default_factory=dict)
+
+
+class ChainExecuteResponse(BaseModel):
+    chain_id: str
+    chain_name: str
+    status: str  # "success" | "partial" | "failed"
+    steps: list[dict]
+    total_duration_ms: int
+    error: str = ""
+
+
+SerialChainBase.model_rebuild()
+
+
+class ChatResponseWithSuggestions(BaseModel):
+    """Chat response with API suggestions."""
+    conversation_id: str
+    message: dict  # Message as dict
+    intent: IntentSuggestion | None = None
+    api_suggestions: list[IntentSuggestion] = []
+

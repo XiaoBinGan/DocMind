@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+﻿from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -455,3 +455,101 @@ async def chat_stream(
             await engine.dispose()
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+"""API Catalog routes — mounted at /api-catalog."""
+
+from fastapi import APIRouter as _CatalogRouter, Depends as _CatalogDepends, Query as _CatalogQuery
+from sqlalchemy.ext.asyncio import AsyncSession as _AsyncSession
+from app.services.api_catalog import (
+    create_api, get_api, list_apis, update_api, delete_api, toggle_api, search_apis,
+    create_chain, get_chain, list_chains, update_chain, delete_chain, execute_chain,
+)
+from app.models.schemas import (
+    ApiDefinitionCreate, ApiDefinitionUpdate, ApiDefinitionResponse,
+    SerialChainCreate, SerialChainResponse,
+    ChainExecuteRequest, ChainExecuteResponse,
+)
+
+def _get_db():
+    """Lazy import to avoid circular dependency."""
+    from app.main import get_db_session
+    return get_db_session
+
+_catalog_router = _CatalogRouter(prefix="/api-catalog", tags=["API Catalog"])
+
+
+# ─── API Definition endpoints ───
+
+@_catalog_router.post("/", response_model=ApiDefinitionResponse)
+async def _create_api_endpoint(data: ApiDefinitionCreate, session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await create_api(session, data)
+
+
+@_catalog_router.get("/", response_model=list[ApiDefinitionResponse])
+async def _list_apis_endpoint(session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await list_apis(session)
+
+
+@_catalog_router.get("/search")
+async def _search_apis_endpoint(keyword: str = _CatalogQuery(..., min_length=1), session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await search_apis(session, keyword)
+
+
+@_catalog_router.get("/{api_id}", response_model=ApiDefinitionResponse)
+async def _get_api_endpoint(api_id: str, session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await get_api(session, api_id)
+
+
+@_catalog_router.put("/{api_id}", response_model=ApiDefinitionResponse)
+async def _update_api_endpoint(api_id: str, data: ApiDefinitionUpdate, session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await update_api(session, api_id, data)
+
+
+@_catalog_router.delete("/{api_id}")
+async def _delete_api_endpoint(api_id: str, session: _AsyncSession = _CatalogDepends(_get_db)):
+    deleted = await delete_api(session, api_id)
+    return {"deleted": deleted}
+
+
+@_catalog_router.patch("/{api_id}/toggle")
+async def _toggle_api_endpoint(api_id: str, enabled: bool = _CatalogQuery(...), session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await toggle_api(session, api_id, enabled)
+
+
+# ─── Serial Chain endpoints ───
+
+@_catalog_router.post("/chains", response_model=SerialChainResponse)
+async def _create_chain_endpoint(data: SerialChainCreate, session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await create_chain(session, data)
+
+
+@_catalog_router.get("/chains", response_model=list[SerialChainResponse])
+async def _list_chains_endpoint(session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await list_chains(session)
+
+
+@_catalog_router.get("/chains/{chain_id}", response_model=SerialChainResponse)
+async def _get_chain_endpoint(chain_id: str, session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await get_chain(session, chain_id)
+
+
+@_catalog_router.put("/chains/{chain_id}", response_model=SerialChainResponse)
+async def _update_chain_endpoint(chain_id: str, data: SerialChainCreate, session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await update_chain(session, chain_id, data)
+
+
+@_catalog_router.delete("/chains/{chain_id}")
+async def _delete_chain_endpoint(chain_id: str, session: _AsyncSession = _CatalogDepends(_get_db)):
+    deleted = await delete_chain(session, chain_id)
+    return {"deleted": deleted}
+
+
+@_catalog_router.post("/chains/{chain_id}/execute", response_model=ChainExecuteResponse)
+async def _execute_chain_endpoint(chain_id: str, data: ChainExecuteRequest = ChainExecuteRequest(), session: _AsyncSession = _CatalogDepends(_get_db)):
+    return await execute_chain(session, chain_id, data.input_data)
+
+
+# Register catalog router under the main router
+router.include_router(_catalog_router)
+

@@ -1,0 +1,16 @@
+{
+  "name": "Hello World Chain",
+  "description": "第一个测试链",
+  "members": [
+    {
+      "order": 1,
+      "api_id": "00000000-0000-0000-0000-000000000000",
+      "input_mapping": {
+        "prompt": "hello"
+      },
+      "output_mapping": {
+        "result": "$.result"
+      }
+    }
+  ]
+}
