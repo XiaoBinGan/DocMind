@@ -312,12 +312,15 @@ def _jaccard_similarity(a: str, b: str) -> float:
 async def suggest_tools(session: AsyncSession, query: str, top_k: int = 3, min_confidence: float = 0.3) -> list[IntentSuggestion]:
     """根据用户输入智能推荐 API 和 Chain。
     
-    评分逻辑：
-    1. 对 query 分词
-    2. 与每个 API 的 name / description / example_queries 计算 Jaccard 相似度
-    3. 如果 query 与 API 的某个 example_query 精确匹配，额外加分
-    4. 同理对 Chain 也做匹配（用 name / description）
-    5. 返回 confidence > min_confidence 的 top_k 结果
+    评分逻辑（加权）：
+    1. name 包含 query → +0.6
+    2. name 包含 query 子串 → +0.4
+    3. description 包含 query → +0.3
+    4. example_queries 精确匹配 → +0.8
+    5. example_queries 子串匹配 → +0.5
+    6. Chain: name 包含 query → +0.6
+    
+    confidence 是相对排名：最高分=1.0，其余按比例缩放
     """
     from app.models.database import ApiDefinition, SerialChain, SerialChainMember
 
@@ -334,78 +337,143 @@ async def suggest_tools(session: AsyncSession, query: str, top_k: int = 3, min_c
     chains = chain_result.scalars().all()
 
     query_lower = query.lower().strip()
-    query_tokens = set(query_lower.split())
-
     suggestions: list[IntentSuggestion] = []
 
     # ---- 遍历 API 计算评分 ----
     for api in apis:
         score = 0.0
-        relevant_examples: list[str] = []
+        match_fields: list[str] = []
 
-        # 与 name / description 计算 Jaccard
-        for field in [api.name, api.description or ""]:
-            score += _jaccard_similarity(query, field)
+        name_lower = api.name.lower() if api.name else ""
+        desc_lower = (api.description or "").lower()
 
-        # 与 example_queries 计算 Jaccard
+        # 1. name 完全包含 query → +0.6
+        if query_lower and query_lower in name_lower:
+            score += 0.6
+            match_fields.append(f"名称包含「{query}」")
+        # 2. name 包含 query 的子串（>=3字符）→ +0.4
+        elif query_lower and len(query_lower) >= 3:
+            for i in range(len(query_lower) - 2):
+                for j in range(i + 3, len(query_lower) + 1):
+                    if query_lower[i:j] in name_lower:
+                        score += 0.35
+                        match_fields.append(f"名称匹配「{query[i:j]}」")
+                        break
+                if score >= 0.35:
+                    break
+
+        # 3. description 包含 query → +0.3
+        if desc_lower and query_lower and query_lower in desc_lower:
+            score += 0.3
+            match_fields.append(f"描述匹配「{query}」")
+
+        # 4. example_queries 精确匹配 → +0.8
         example_queries = json.loads(api.example_queries) if api.example_queries else []
         for eq in example_queries:
-            eq_score = _jaccard_similarity(query, eq)
-            score += eq_score
-            if eq_score > 0.1:
-                relevant_examples.append(eq)
+            eq_lower = eq.strip().lower()
+            if eq_lower == query_lower:
+                score += 0.8
+                match_fields.append(f"触发词「{eq}」")
+                break
 
-        # example_query 精确匹配加分
-        for eq in example_queries:
-            if eq.strip().lower() == query_lower:
-                score += 1.0  # 精确匹配大幅加分
+        # 5. example_queries 子串匹配 → +0.5
+        if example_queries and score < 0.3:
+            for eq in example_queries:
+                eq_lower = eq.strip().lower()
+                if query_lower in eq_lower or eq_lower in query_lower:
+                    score += 0.5
+                    match_fields.append(f"示例匹配「{eq}」")
+                    break
 
         if score < min_confidence:
             continue
 
-        # confidence 归一化到 [0, 1]
-        confidence = min(score / 3.0, 1.0)  # 3 个字段各最高 1.0
-        if confidence < min_confidence:
-            continue
+        # 构建有用信息
+        method_path = f"{api.method} {api.base_url}{api.path}" if api.base_url and api.path else api.method or api.path or "未知"
+        explanation = f"{method_path}  —  {match_fields[-1]}"
+        if api.description:
+            desc_preview = api.description[:80].replace("\n", " ")
+            explanation += f"  |  {desc_preview}"
+
+        confidence = score  # 原始分数，后续会做归一化
 
         suggestions.append(IntentSuggestion(
             type="api",
-            confidence=round(confidence, 4),
+            confidence=confidence,
             target_id=api.id,
             target_name=api.name,
-            explanation=f"API '{api.name}' 与你的输入高度相关",
-            example_queries=relevant_examples[:3],
+            explanation=explanation,
+            example_queries=relevant_examples[:3] if (relevant_examples or score > 0.3) else [],
         ))
 
     # ---- 遍历 Chain 计算评分 ----
     for chain in chains:
         score = 0.0
-        # 与 name / description 计算 Jaccard
-        for field in [chain.name, chain.description or ""]:
-            score += _jaccard_similarity(query, field)
+        match_fields: list[str] = []
 
-        # 精确匹配加分
-        if chain.name.strip().lower() == query_lower:
-            score += 1.0
+        name_lower = chain.name.lower() if chain.name else ""
+
+        # name 包含 query → +0.6
+        if query_lower and query_lower in name_lower:
+            score += 0.6
+            match_fields.append(f"工作流名称包含「{query}」")
+        elif query_lower and len(query_lower) >= 3:
+            for i in range(len(query_lower) - 2):
+                for j in range(i + 3, len(query_lower) + 1):
+                    if query_lower[i:j] in name_lower:
+                        score += 0.4
+                        match_fields.append(f"名称匹配「{query[i:j]}」")
+                        break
+                if score >= 0.4:
+                    break
+
+        # Chain description 包含 query → +0.3
+        desc_lower = (chain.description or "").lower()
+        if desc_lower and query_lower and query_lower in desc_lower:
+            score += 0.3
+            match_fields.append(f"描述匹配「{query}」")
+
+        # Chain 成员 API 名称匹配 → +0.2 * 匹配数
+        if score > 0:
+            chain_desc_parts = [desc for desc in match_fields]
+            desc_preview = chain.description[:60].replace("\n", " ") if chain.description else "串行工作流"
+            explanation = f"包含 {chain.steps_count} 步  —  {match_fields[-1]}"
+            if desc_preview:
+                explanation += f"  |  {desc_preview}"
+            else:
+                explanation += f"  |  {chain.steps_count} 步串行调用"
+        elif score < min_confidence:
+            continue
+        else:
+            explanation = f"工作流「{chain.name}」 — {match_fields[-1]}"
 
         if score < min_confidence:
             continue
 
-        confidence = min(score / 2.0, 1.0)  # 2 个字段各最高 1.0
-        if confidence < min_confidence:
-            continue
+        confidence = score
 
         suggestions.append(IntentSuggestion(
             type="chain",
-            confidence=round(confidence, 4),
+            confidence=confidence,
             target_id=chain.id,
             target_name=chain.name,
-            explanation=f"工作流 '{chain.name}' 可能与你的需求相关",
+            explanation=explanation,
             example_queries=[],
         ))
 
-    # 按 confidence 降序排列，取 top_k
+    if not suggestions:
+        return []
+
+    # 按 score 降序，最高分归一化为 1.0
     suggestions.sort(key=lambda s: s.confidence, reverse=True)
+    max_score = suggestions[0].confidence
+
+    for s in suggestions:
+        if max_score > 0:
+            s.confidence = round(s.confidence / max_score, 2)
+        else:
+            s.confidence = 0.0
+
     return suggestions[:top_k]
 
 

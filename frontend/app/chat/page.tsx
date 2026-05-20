@@ -9,7 +9,7 @@ import {
   Send, FileText, MessageSquare,
   Trash2, Plus, BookOpen, Loader, Copy, Check
 } from "lucide-react"
-import { api, Document, Conversation, Message, Reference, IntentResult, IntentSuggestion } from "@/lib/api"
+import { api, Document, Conversation, Message, Reference, IntentResult, IntentSuggestion, apiCatalog } from "@/lib/api"
 import Nav from "@/components/nav"
 import { rehypeMermaidBlock } from "@/app/components/chat/rehype-mermaid-block"
 import dynamic from "next/dynamic"
@@ -298,7 +298,7 @@ export default function ChatPage() {
     suggestTimerRef.current = setTimeout(async () => {
       setSuggestionLoading(true)
       try {
-        const result = await api.apiCatalog.suggest(query)
+        const result = await apiCatalog.suggest(query)
         if (result.suggestions && result.suggestions.length > 0) {
           setSuggestions(result.suggestions)
         } else {
@@ -702,7 +702,7 @@ export default function ChatPage() {
                     <div className={styles.suggestionConf}>
                       {Math.round(s.confidence * 100)}% 匹配
                     </div>
-                  </div
+                  </div>
                 ))}
               </div>
             </div>
