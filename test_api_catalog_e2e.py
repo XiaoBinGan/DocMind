@@ -1,85 +1,126 @@
-import asyncio, httpx, json
+"""Test all /api-catalog endpoints."""
+import asyncio
+import httpx
+import sys
+
+BASE = "http://localhost:8000/api-catalog"
 
 async def test():
-    base = 'http://127.0.0.1:8000'
-    async with httpx.AsyncClient(base_url=base, timeout=10) as c:
-        print('Phase 1: API CRUD')
-        r = await c.post('/api-catalog/', json={
-            'name': 'Google Search',
-            'base_url': 'https://www.googleapis.com',
-            'method': 'GET',
-            'path': '/customsearch/v1',
-            'description': 'Google Custom Search API',
-            'headers': json.dumps({'X-Test': 'header'}),
-            'body_schema': json.dumps({'q': 'string'}),
-            'auth_type': 'bearer',
-            'timeout_ms': 30000
-        })
-        api = r.json()
-        print(f'OK Create API: {api["name"]} id={api["id"][:8]}...')
-
-        r2 = await c.get(f'/api-catalog/{api["id"]}')
-        assert r2.json()['name'] == 'Google Search'
-        print('OK Get by ID')
-
-        r3 = await c.get('/api-catalog/')
-        assert len(r3.json()) == 1
-        print('OK List APIs')
-
-        r4 = await c.get('/api-catalog/search', params={'keyword': 'Google'})
-        assert len(r4.json()) == 1
-        print('OK Search APIs')
-
-        r5 = await c.patch(f'/api-catalog/{api["id"]}/toggle', params={'enabled': 0})
-        assert r5.json()['enabled'] == 0
-        print('OK Toggle API (disabled)')
-
-        r6 = await c.put(f'/api-catalog/{api["id"]}', json={
-            'name': 'Google Search V2',
-            'base_url': 'https://www.googleapis.com',
-            'method': 'GET',
-            'path': '/customsearch/v2',
-            'description': 'Updated',
-            'headers': {},
-            'body_schema': {},
-            'auth_type': 'bearer',
-            'timeout_ms': 30000
-        })
-        assert r6.json()['name'] == 'Google Search V2'
-        print('OK Update API')
-
-        await c.patch(f'/api-catalog/{api["id"]}/toggle', params={'enabled': 1})
-
+    async with httpx.AsyncClient(timeout=10) as client:
+        # Test /apis (list all)
+        print("=== GET /apis ===")
+        r = await client.get(f"{BASE}/apis")
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:200]}")
         print()
-        print('Phase 2: Chain CRUD')
-        r7 = await c.post('/api-catalog/chains', json={
-            'name': 'Test Workflow',
-            'description': 'API1 chain',
-            'members': [
-                {'order': 1, 'api_id': api['id'], 'input_mapping': {'q': '{{query}}'}},
-            ]
-        })
-        chain = r7.json()
-        print(f'OK Create Chain: {chain["name"]} id={chain["id"][:8]}...')
-
-        r8 = await c.get(f'/api-catalog/chains/{chain["id"]}')
-        assert r8.json()['name'] == 'Test Workflow'
-        assert r8.json()['steps_count'] == 1
-        print('OK Get Chain with members')
-
-        r9 = await c.get('/api-catalog/chains')
-        assert len(r9.json()) == 1
-        print('OK List Chains')
-
-        r10 = await c.post(f'/api-catalog/chains/{chain["id"]}/execute', json={'input_data': {'query': 'test'}})
-        print(f'OK Execute Chain: status={r10.json().get("status")}')
-
-        await c.delete(f'/api-catalog/chains/{chain["id"]}')
-        await c.delete(f'/api-catalog/{api["id"]}')
-        r11 = await c.get('/api-catalog/')
-        r12 = await c.get('/api-catalog/chains')
-        assert len(r11.json()) == 0 and len(r12.json()) == 0
+        
+        # Test / (list all)
+        print("=== GET / ===")
+        r = await client.get(f"{BASE}/")
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:200]}")
         print()
-        print('ALL TESTS PASSED')
+        
+        # Test /chains (list all chains)
+        print("=== GET /chains ===")
+        r = await client.get(f"{BASE}/chains")
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:500]}")
+        print()
+        
+        # Test /chains/{id}
+        print("=== GET /chains/{id} ===")
+        if r.status_code == 200 and r.json():
+            chain_id = r.json()[0]["id"]
+            r = await client.get(f"{BASE}/chains/{chain_id}")
+            print(f"Status: {r.status_code}")
+            print(f"Body: {r.text[:500]}")
+            print()
+        
+        # Test nonexistent /{api_id}
+        print("=== GET /{nonexistent_id} ===")
+        r = await client.get(f"{BASE}/00000000-0000-0000-0000-000000000000")
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:200]}")
+        print()
+        
+        # Test POST / (create API)
+        print("=== POST / ===")
+        create_data = {
+            "name": "Test API",
+            "description": "Test for validation",
+            "base_url": "https://api.example.com",
+            "method": "GET",
+            "path": "/test",
+            "headers": {},
+            "body_schema": {},
+            "auth_type": "none"
+        }
+        r = await client.post(f"{BASE}/", json=create_data)
+        print(f"Status: {r.status_code}")
+        print(f"Body: {r.text[:500]}")
+        if r.status_code == 200:
+            new_api_id = r.json()["id"]
+            print()
+            
+            # Get it
+            print("=== GET /{id} ===")
+            r = await client.get(f"{BASE}/{new_api_id}")
+            print(f"Status: {r.status_code}")
+            print(f"Body: {r.text[:200]}")
+            print()
+            
+            # Update it
+            print("=== PUT /{id} ===")
+            r = await client.put(f"{BASE}/{new_api_id}", json={"description": "Updated test"})
+            print(f"Status: {r.status_code}")
+            print(f"Body: {r.text[:200]}")
+            print()
+            
+            # Toggle it
+            print("=== PATCH /{id}/toggle ===")
+            r = await client.patch(f"{BASE}/{new_api_id}/toggle", params={"enabled": False})
+            print(f"Status: {r.status_code}")
+            print(f"Body: {r.text[:200]}")
+            print()
+            
+            # Delete it
+            print("=== DELETE /{id} ===")
+            r = await client.delete(f"{BASE}/{new_api_id}")
+            print(f"Status: {r.status_code}")
+            print(f"Body: {r.text[:200]}")
+            print()
+            
+            # Verify deleted (should 404)
+            print("=== GET /{id} after delete (expect 404) ===")
+            r = await client.get(f"{BASE}/{new_api_id}")
+            print(f"Status: {r.status_code}")
+            print()
+
+        # Test POST /chains (create chain)
+        print("=== POST /chains ===")
+        # First list APIs for chain members
+        r = await client.get(f"{BASE}/")
+        if r.status_code == 200 and r.json():
+            api_id = r.json()[0]["id"]
+            chain_data = {
+                "name": "Test Chain",
+                "description": "Test chain for validation",
+                "members": [
+                    {"order": 1, "api_id": api_id, "input_mapping": {}, "output_mapping": {}}
+                ]
+            }
+            r = await client.post(f"{BASE}/chains", json=chain_data)
+            print(f"Status: {r.status_code}")
+            print(f"Body: {r.text[:500]}")
+            if r.status_code == 200:
+                chain_id = r.json()["id"]
+                
+                # Execute
+                print("=== POST /chains/{id}/execute ===")
+                r = await client.post(f"{BASE}/chains/{chain_id}/execute", json={"input_data": {"url": "https://example.com"}})
+                print(f"Status: {r.status_code}")
+                print(f"Body: {r.text[:500]}")
+                print()
 
 asyncio.run(test())

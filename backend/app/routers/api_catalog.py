@@ -55,6 +55,13 @@ async def search_apis_endpoint(keyword: str = Query(..., min_length=1), session:
     return await search_apis(session, keyword)
 
 
+# ---- API list endpoint (MUST be before /{api_id} to avoid path param collision) ----
+
+@router.get("/apis")
+async def list_apis_endpoint_alias(session: AsyncSession = Depends(get_db)):
+    return await list_apis(session)
+
+
 # ---- Serial Chain endpoints (MUST be before /{api_id} to avoid path param collision) ----
 
 @router.post("/chains", response_model=SerialChainResponse)
