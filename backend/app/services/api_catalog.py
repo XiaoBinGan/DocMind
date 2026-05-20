@@ -395,6 +395,9 @@ async def suggest_tools(session: AsyncSession, query: str, top_k: int = 3, min_c
             desc_preview = api.description[:80].replace("\n", " ")
             explanation += f"  |  {desc_preview}"
 
+        # Collect example queries that matched
+        matched_examples = [eq for eq in (json.loads(api.example_queries) if api.example_queries else []) if query_lower in eq.lower() or eq.lower() in query_lower]
+
         confidence = score  # 原始分数，后续会做归一化
 
         suggestions.append(IntentSuggestion(
@@ -403,7 +406,7 @@ async def suggest_tools(session: AsyncSession, query: str, top_k: int = 3, min_c
             target_id=api.id,
             target_name=api.name,
             explanation=explanation,
-            example_queries=relevant_examples[:3] if (relevant_examples or score > 0.3) else [],
+            example_queries=matched_examples[:3] if matched_examples else [],
         ))
 
     # ---- 遍历 Chain 计算评分 ----
