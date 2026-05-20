@@ -1,6 +1,6 @@
 """API Catalog routes - mounted at /api-catalog."""
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.api_catalog import (
@@ -39,7 +39,7 @@ async def get_db():
             raise
 
 
-# ---- API Definition endpoints ----
+# ---- Static paths MUST come before wildcard paths ----
 
 @router.post("/", response_model=ApiDefinitionResponse)
 async def create_api_endpoint(data: ApiDefinitionCreate, session: AsyncSession = Depends(get_db)):
@@ -56,14 +56,10 @@ async def search_apis_endpoint(keyword: str = Query(..., min_length=1), session:
     return await search_apis(session, keyword)
 
 
-# ---- API list endpoint (MUST be before /{api_id} to avoid path param collision) ----
-
 @router.get("/apis")
 async def list_apis_endpoint_alias(session: AsyncSession = Depends(get_db)):
     return await list_apis(session)
 
-
-# ---- Serial Chain endpoints (MUST be before /{api_id} to avoid path param collision) ----
 
 @router.post("/chains", response_model=SerialChainResponse)
 async def create_chain_endpoint(data: SerialChainCreate, session: AsyncSession = Depends(get_db)):
@@ -104,31 +100,6 @@ async def execute_chain_endpoint(chain_id: str, data: ChainExecuteRequest = Chai
     return await execute_chain_svc(session, chain_id, data.input_data)
 
 
-# ---- Wildcard endpoints (MUST be last) ----
-
-@router.get("/{api_id}", response_model=ApiDefinitionResponse)
-async def get_api_endpoint(api_id: str, session: AsyncSession = Depends(get_db)):
-    return await get_api(session, api_id)
-
-
-@router.put("/{api_id}", response_model=ApiDefinitionResponse)
-async def update_api_endpoint(api_id: str, data: ApiDefinitionUpdate, session: AsyncSession = Depends(get_db)):
-    return await update_api(session, api_id, data)
-
-
-@router.delete("/{api_id}")
-async def delete_api_endpoint(api_id: str, session: AsyncSession = Depends(get_db)):
-    deleted = await delete_api(session, api_id)
-    return {"deleted": deleted}
-
-
-@router.patch("/{api_id}/toggle")
-async def toggle_api_endpoint(api_id: str, enabled: bool = Query(...), session: AsyncSession = Depends(get_db)):
-    return await toggle_api(session, api_id, enabled)
-
-
-# ---- 工具推荐端点 ----
-
 @router.get("/suggest", summary="智能推荐 API 和工作流")
 async def suggest_endpoint(query: str = Query(..., min_length=1), session: AsyncSession = Depends(get_db)):
     """根据用户消息智能推荐 API 和 Chain。
@@ -148,3 +119,29 @@ async def suggest_endpoint(query: str = Query(..., min_length=1), session: Async
             "example_queries": s.example_queries,
         })
     return {"suggestions": result}
+
+
+# ---- Wildcard paths (MUST be last) ----
+
+@router.get("/{api_id}", response_model=ApiDefinitionResponse)
+async def get_api_endpoint(api_id: str, session: AsyncSession = Depends(get_db)):
+    result = await get_api(session, api_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="API not found")
+    return result
+
+
+@router.put("/{api_id}", response_model=ApiDefinitionResponse)
+async def update_api_endpoint(api_id: str, data: ApiDefinitionUpdate, session: AsyncSession = Depends(get_db)):
+    return await update_api(session, api_id, data)
+
+
+@router.delete("/{api_id}")
+async def delete_api_endpoint(api_id: str, session: AsyncSession = Depends(get_db)):
+    deleted = await delete_api(session, api_id)
+    return {"deleted": deleted}
+
+
+@router.patch("/{api_id}/toggle")
+async def toggle_api_endpoint(api_id: str, enabled: bool = Query(...), session: AsyncSession = Depends(get_db)):
+    return await toggle_api(session, api_id, enabled)
