@@ -136,4 +136,15 @@ async def suggest_endpoint(query: str = Query(..., min_length=1), session: Async
     返回 top-3 匹配的 API 或 Chain，包含置信度和推荐原因。
     """
     suggestions = await suggest_tools(session, query)
-    return {"suggestions": suggestions}
+    # 将 Pydantic model 转为 dict 避免序列化错误
+    result = []
+    for s in suggestions:
+        result.append({
+            "type": s.type,
+            "confidence": s.confidence,
+            "target_id": s.target_id,
+            "target_name": s.target_name,
+            "explanation": s.explanation,
+            "example_queries": s.example_queries,
+        })
+    return {"suggestions": result}
