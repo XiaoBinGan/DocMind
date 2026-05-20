@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.api_catalog import (
     create_api, get_api, list_apis, update_api, delete_api, toggle_api, search_apis,
     create_chain, get_chain, list_chains, update_chain, delete_chain, execute_chain,
+    suggest_tools,
 )
 from app.services.serial_chain import (
     create_chain as create_chain_svc,
@@ -124,3 +125,15 @@ async def delete_api_endpoint(api_id: str, session: AsyncSession = Depends(get_d
 @router.patch("/{api_id}/toggle")
 async def toggle_api_endpoint(api_id: str, enabled: bool = Query(...), session: AsyncSession = Depends(get_db)):
     return await toggle_api(session, api_id, enabled)
+
+
+# ---- 工具推荐端点 ----
+
+@router.get("/suggest", summary="智能推荐 API 和工作流")
+async def suggest_endpoint(query: str = Query(..., min_length=1), session: AsyncSession = Depends(get_db)):
+    """根据用户消息智能推荐 API 和 Chain。
+    
+    返回 top-3 匹配的 API 或 Chain，包含置信度和推荐原因。
+    """
+    suggestions = await suggest_tools(session, query)
+    return {"suggestions": suggestions}

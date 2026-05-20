@@ -9,7 +9,7 @@ import {
   Send, FileText, MessageSquare,
   Trash2, Plus, BookOpen, Loader, Copy, Check
 } from "lucide-react"
-import { api, Document, Conversation, Message, Reference, IntentResult } from "@/lib/api"
+import { api, Document, Conversation, Message, Reference, IntentResult, IntentSuggestion } from "@/lib/api"
 import Nav from "@/components/nav"
 import { rehypeMermaidBlock } from "@/app/components/chat/rehype-mermaid-block"
 import dynamic from "next/dynamic"
@@ -128,6 +128,9 @@ export default function ChatPage() {
   const [statusText, setStatusText] = useState("")
   const [showDocList, setShowDocList] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<IntentSuggestion[]>([])
+  const [suggestionLoading, setSuggestionLoading] = useState(false)
+  const suggestTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const formatTime = (iso?: string) => {
     if (!iso) return ""
@@ -272,12 +275,61 @@ export default function ChatPage() {
     } catch { /* ignore */ }
   }, [])
 
+  // 输入时智能推荐工具（防抖 500ms）
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
     const el = e.target
     el.style.height = "auto"
     el.style.height = Math.min(el.scrollHeight, 200) + "px"
+
+    // 清除之前的定时器
+    if (suggestTimerRef.current) {
+      clearTimeout(suggestTimerRef.current)
+      suggestTimerRef.current = null
+    }
+
+    const query = e.target.value.trim()
+    if (!query || query.length < 2) {
+      setSuggestions([])
+      return
+    }
+
+    // 防抖 500ms 后调用推荐接口
+    suggestTimerRef.current = setTimeout(async () => {
+      setSuggestionLoading(true)
+      try {
+        const result = await api.apiCatalog.suggest(query)
+        if (result.suggestions && result.suggestions.length > 0) {
+          setSuggestions(result.suggestions)
+        } else {
+          setSuggestions([])
+        }
+      } catch (error) {
+        console.error("Failed to load suggestions:", error)
+        setSuggestions([])
+      } finally {
+        setSuggestionLoading(false)
+      }
+    }, 500)
   }, [])
+
+  // 组件卸载时清理定时器
+  useEffect(() => {
+    return () => {
+      if (suggestTimerRef.current) {
+        clearTimeout(suggestTimerRef.current)
+      }
+    }
+  }, [])
+
+  // 点击推荐卡片时的处理
+  const handleSuggestionClick = useCallback((suggestion: IntentSuggestion) => {
+    setInput(suggestion.target_name)
+    setSuggestions([])
+  }, [])
+
+  // 确认是否应该显示推荐卡片
+  const showSuggestions = suggestions.length > 0 && input.trim().length >= 2 && !loading && !streaming
 
   const handleSend = async () => {
     if (!input.trim() || loading || streaming) return
@@ -628,6 +680,37 @@ export default function ChatPage() {
         )}
 
         <div className={styles.inputArea}>
+          {/* 智能推荐工具卡片 */}
+          {showSuggestions && (
+            <div className={styles.suggestionPanel}>
+              <div className={styles.suggestionHeader}>
+                <span className={styles.suggestionTitle}>🔧 可用工具</span>
+                <span className={styles.suggestionSubtitle}>点击卡片使用</span>
+              </div>
+              <div className={styles.suggestionCards}>
+                {suggestions.map((s, i) => (
+                  <div
+                    key={s.target_id + i}
+                    className={styles.suggestionCard}
+                    onClick={() => handleSuggestionClick(s)}
+                    title={s.explanation}
+                  >
+                    <div className={styles.suggestionType}>
+                      {s.type === "api" ? "⚡ API" : "🔗 工作流"}
+                    </div>
+                    <div className={styles.suggestionName}>{s.target_name}</div>
+                    <div className={styles.suggestionConf}>
+                      {Math.round(s.confidence * 100)}% 匹配
+                    </div>
+                  </div
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 加载提示 */}
+          {suggestionLoading && <div className={styles.suggestionLoading}>搜索可用工具...</div>}
+
           <div className={styles.inputWrapper}>
             <textarea
               ref={inputRef}

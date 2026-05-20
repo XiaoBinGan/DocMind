@@ -282,6 +282,133 @@ async def execute_chain(session: AsyncSession, chain_id: str, input_data: dict) 
     )
 
 
+# ── 工具推荐服务 ──
+
+def _jaccard_similarity(a: str, b: str) -> float:
+    """计算两个文本的 Jaccard 相似度（基于分词后的集合）。
+    
+    用简单的空格/标点分词，对中文支持字符级 bigram + 空格分词混合。
+    """
+    import re
+    # 简单分词：中文字符单独成词，英文/数字按空格和标点分割
+    def tokenize(text: str) -> set[str]:
+        if not text:
+            return set()
+        # 先提取中文字符序列
+        cjk_chars = set(re.findall(r'[\u4e00-\u9fff]', text))
+        # 再提取英文/数字单词
+        words = set(re.findall(r'[a-zA-Z0-9]+', text))
+        return cjk_chars | words
+
+    set_a = tokenize(a)
+    set_b = tokenize(b)
+    if not set_a or not set_b:
+        return 0.0
+    intersection = len(set_a & set_b)
+    union = len(set_a | set_b)
+    return intersection / union if union > 0 else 0.0
+
+
+async def suggest_tools(session: AsyncSession, query: str, top_k: int = 3, min_confidence: float = 0.3) -> list[IntentSuggestion]:
+    """根据用户输入智能推荐 API 和 Chain。
+    
+    评分逻辑：
+    1. 对 query 分词
+    2. 与每个 API 的 name / description / example_queries 计算 Jaccard 相似度
+    3. 如果 query 与 API 的某个 example_query 精确匹配，额外加分
+    4. 同理对 Chain 也做匹配（用 name / description）
+    5. 返回 confidence > min_confidence 的 top_k 结果
+    """
+    from app.models.database import ApiDefinition, SerialChain, SerialChainMember
+
+    # 获取所有已启用的 API
+    api_result = await session.execute(
+        select(ApiDefinition).where(ApiDefinition.enabled == 1)
+    )
+    apis = api_result.scalars().all()
+
+    # 获取所有已启用的 Chain
+    chain_result = await session.execute(
+        select(SerialChain).where(SerialChain.enabled == 1)
+    )
+    chains = chain_result.scalars().all()
+
+    query_lower = query.lower().strip()
+    query_tokens = set(query_lower.split())
+
+    suggestions: list[IntentSuggestion] = []
+
+    # ---- 遍历 API 计算评分 ----
+    for api in apis:
+        score = 0.0
+        relevant_examples: list[str] = []
+
+        # 与 name / description 计算 Jaccard
+        for field in [api.name, api.description or ""]:
+            score += _jaccard_similarity(query, field)
+
+        # 与 example_queries 计算 Jaccard
+        example_queries = json.loads(api.example_queries) if api.example_queries else []
+        for eq in example_queries:
+            eq_score = _jaccard_similarity(query, eq)
+            score += eq_score
+            if eq_score > 0.1:
+                relevant_examples.append(eq)
+
+        # example_query 精确匹配加分
+        for eq in example_queries:
+            if eq.strip().lower() == query_lower:
+                score += 1.0  # 精确匹配大幅加分
+
+        if score < min_confidence:
+            continue
+
+        # confidence 归一化到 [0, 1]
+        confidence = min(score / 3.0, 1.0)  # 3 个字段各最高 1.0
+        if confidence < min_confidence:
+            continue
+
+        suggestions.append(IntentSuggestion(
+            type="api",
+            confidence=round(confidence, 4),
+            target_id=api.id,
+            target_name=api.name,
+            explanation=f"API '{api.name}' 与你的输入高度相关",
+            example_queries=relevant_examples[:3],
+        ))
+
+    # ---- 遍历 Chain 计算评分 ----
+    for chain in chains:
+        score = 0.0
+        # 与 name / description 计算 Jaccard
+        for field in [chain.name, chain.description or ""]:
+            score += _jaccard_similarity(query, field)
+
+        # 精确匹配加分
+        if chain.name.strip().lower() == query_lower:
+            score += 1.0
+
+        if score < min_confidence:
+            continue
+
+        confidence = min(score / 2.0, 1.0)  # 2 个字段各最高 1.0
+        if confidence < min_confidence:
+            continue
+
+        suggestions.append(IntentSuggestion(
+            type="chain",
+            confidence=round(confidence, 4),
+            target_id=chain.id,
+            target_name=chain.name,
+            explanation=f"工作流 '{chain.name}' 可能与你的需求相关",
+            example_queries=[],
+        ))
+
+    # 按 confidence 降序排列，取 top_k
+    suggestions.sort(key=lambda s: s.confidence, reverse=True)
+    return suggestions[:top_k]
+
+
 async def log_api_usage(session: AsyncSession, data: ApiUsageLogCreate) -> None:
     """Log an API usage."""
     log = ApiUsageLog(

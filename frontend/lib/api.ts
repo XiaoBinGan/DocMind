@@ -610,6 +610,13 @@ export const apiCatalog = {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
     return resp.json()
   },
+
+  // ── 智能推荐 ──
+  async suggest(query: string): Promise<{ suggestions: IntentSuggestion[] }> {
+    const resp = await fetch(`${API_BASE}${API_CATALOG_BASE}/suggest?query=${encodeURIComponent(query)}`)
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+    return resp.json()
+  },
 }
 
 // ── Chains methods ──

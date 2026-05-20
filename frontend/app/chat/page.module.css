@@ -1038,3 +1038,91 @@
     font-size: 0.82em;
   }
 }
+
+
+/* ============== 智能推荐工具卡片 ============== */
+.suggestionPanel {
+  margin: 0 0 0.75rem 0;
+  padding: 0;
+  animation: suggestionSlideUp 0.2s ease-out;
+}
+
+@keyframes suggestionSlideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.suggestionHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 6px;
+}
+
+.suggestionTitle {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.suggestionSubtitle {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.suggestionCards {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0 8px 4px;
+  flex-wrap: wrap;
+}
+
+.suggestionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0.625rem 0.875rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-width: 140px;
+  max-width: 180px;
+  flex: 1;
+}
+
+.suggestionCard:hover {
+  border-color: var(--accent-primary);
+  background: rgba(0, 201, 255, 0.04);
+  box-shadow: 0 2px 8px rgba(0, 201, 255, 0.12);
+  transform: translateY(-1px);
+}
+
+.suggestionType {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-primary);
+  letter-spacing: 0.02em;
+}
+
+.suggestionName {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.suggestionConf {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.suggestionLoading {
+  padding: 4px 8px 2px;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  animation: blink 1s step-end infinite;
+}
