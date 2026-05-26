@@ -347,6 +347,71 @@ class ChainExecuteResponse(BaseModel):
     error: str = ""
 
 
+class ApiExecuteResponse(BaseModel):
+    api_id: str
+    api_name: str
+    method: str
+    url: str
+    status_code: int | None = None
+    body: dict
+    response: dict
+    duration_ms: int
+    error: str = ""
+
+
+# ── Knowledge Graph schemas ──
+
+class KGNodeSummary(BaseModel):
+    """知识图谱节点摘要"""
+    id: str
+    label: str
+    kind: str  # concept / api / chain / document
+    frequency: int = 1
+
+class KGEdgeSummary(BaseModel):
+    """知识图谱边摘要"""
+    source_id: str
+    target_id: str
+    source_label: str
+    target_label: str
+    relation: str
+    weight: int = 1
+
+class KGStatsResponse(BaseModel):
+    """知识图谱统计"""
+    total_nodes: int
+    total_edges: int
+    by_kind: dict[str, int]
+    by_relation: dict[str, int]
+    top_concepts: list[dict[str, int]]  # [{"label": str, "frequency": int}, ...]
+    top_apis: list[dict[str, int]]
+
+class KGSearchResponse(BaseModel):
+    """知识图谱搜索结果"""
+    results: list[KGNodeSummary]
+    query: str
+    limit: int
+
+class KGNeighborResponse(BaseModel):
+    """知识图谱邻居查询结果"""
+    node: KGNodeSummary
+    direct: list[KGEdgeSummary]
+    apis: list[KGNodeSummary]
+    chains: list[KGNodeSummary]
+
+class KGRecommendResponse(BaseModel):
+    """知识图谱推荐结果"""
+    suggestions: list[IntentSuggestion]
+    query: str
+
+class KGRebuildResponse(BaseModel):
+    """知识图谱重建结果"""
+    status: str  # "success" | "skipped" | "error"
+    nodes_created: int
+    edges_created: int
+    message: str = ""
+
+
 SerialChainBase.model_rebuild()
 
 

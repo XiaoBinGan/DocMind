@@ -9,7 +9,7 @@ import uuid
 import asyncio
 import json as _json
 
-from app.models.database import Conversation, Message, Document, User
+from app.models.database import Conversation, Message, Document, User, get_db
 from app.models.schemas import (
     ConversationResponse, ConversationListResponse,
     ChatRequest, ChatResponse, MessageResponse
@@ -18,18 +18,6 @@ from app.services.auth_service import get_current_user
 from app.core.config import settings as _settings
 
 router = APIRouter(prefix="/api", tags=["chat"])
-
-
-async def get_db():
-    async with __import__("app.main").main.async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 def _doc_owner_check(db: AsyncSession, doc_id: str, current_user: User):
@@ -65,11 +53,29 @@ async def _build_context(db: AsyncSession, conv: Conversation, current_user: Use
         parsed = await document_parser.parse(doc.file_path)
         if parsed.get("success"):
             retriever = PageRetriever(doc.index_tree, parsed["pages"])
+
+            # P1: Entity-aware retrieval via entity_indexer
+            entity_context = ""
+            try:
+                from app.services.entity_indexer import EntityIndexer
+                idx = EntityIndexer()
+                idx.build_index(parsed["pages"])
+                entity_matches = idx.query_entities(request_message, top_k=3)
+                if entity_matches:
+                    entity_context = "\n[Entity Matches]\n" + "\n".join(
+                        f"- {e['entity']} ({e['type']}, page {e['page']}): {e['snippet'][:300]}"
+                        for e in entity_matches
+                    )
+            except Exception:
+                pass
+
             retrieved = await retriever.retrieve(request_message, top_k=5)
             for r in retrieved:
                 context += f"\n\n[Page {r['page']}]\n{r['content'][:1500]}"
                 references.append({"page": r["page"], "reason": r.get("reason", ""), "preview": r["content"][:200]})
-            if not retrieved:
+            if entity_context:
+                context += entity_context
+            if not retrieved and not entity_context:
                 for i, page in enumerate(parsed["pages"][:3]):
                     content = page.get("content") if isinstance(page, dict) else str(page)
                     context += f"\n\n[Page {i+1}]\n{content[:1500]}"
@@ -260,10 +266,13 @@ async def chat(
     
     # Build history
     history = ""
-    if conv.messages:
-        for m in conv.messages[-10:]:
-            tag = "User" if m.role == "user" else "Assistant"
-            history += f"\n{tag}: {m.content}"
+    try:
+        if conv.messages:
+            for m in conv.messages[-10:]:
+                tag = "User" if m.role == "user" else "Assistant"
+                history += f"\n{tag}: {m.content}"
+    except Exception:
+        pass  # new conv without messages loaded
     
     # Auto-match document
     await _resolve_document(db, conv, current_user, request.message)
@@ -275,15 +284,80 @@ async def chat(
     system_prompt = """You are DocMind, an AI assistant specialized in analyzing documents.
 Answer questions accurately based on document content. Cite specific pages when providing information."""
     
-    if context:
-        user_prompt = f"DOCUMENT CONTEXT:{context}\n\nCONVERSATION HISTORY:{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
-    else:
-        user_prompt = f"USER QUESTION: {request.message}"
-    
-    # Generate response
+    # KG recommendation for non-streaming
+    kg_context = ""
+    try:
+        from app.services.knowledge_graph import recommend_from_query as kg_recommend
+        kg_suggestions = await kg_recommend(db, request.message, top_k=5, min_confidence=0.2)
+        if kg_suggestions:
+            kg_context = "\nKnowledge Graph Recommendations:\n"
+            for i, s in enumerate(kg_suggestions, 1):
+                kg_context += f"{i}. [{s.type.upper()}] {s.target_name} (confidence: {s.confidence:.2f})\n"
+    except Exception:
+        pass
+
+    # ── P0+P1+P2: Hybrid RAG Routing + Plan-and-Execute ──────────────────────
     response_text = ""
-    async for chunk in llm_service.generate(system_prompt, user_prompt, stream=False):
-        response_text += chunk
+    intent_type = "general_chat"
+    try:
+        from app.services.intent_service import analyze_intent
+        intent_result = await analyze_intent(request.message)
+        if intent_result:
+            intent_type = intent_result.intent_type
+    except Exception:
+        pass
+
+    should_use_rag = intent_type in ("doc_query", "doc_comparison", "doc_analysis") and conv.document_id
+
+    if should_use_rag:
+        # Hybrid routing with Self-RAG
+        try:
+            from app.services.query_rewriter import hybrid_route
+            routing = await hybrid_route(
+                query=request.message,
+                intent_type=intent_type,
+                intent_confidence=intent_result.confidence if intent_result else 0.5,
+                retrieved_content=context,
+                documents_available=True,
+            )
+
+            if routing.should_answer and context:
+                # Use Plan-and-Execute for structured reasoning
+                from app.services.plan_executor import plan_and_execute
+                history_list = []
+                try:
+                    for m in conv.messages[-10:]:
+                        role = "user" if m.role == "user" else "assistant"
+                        history_list.append({"role": role, "content": m.content})
+                except Exception:
+                    history_list = []
+
+                plan_result = await plan_and_execute(
+                    query=request.message,
+                    retrieve_fn=None,
+                    conversation_history=history_list,
+                    user_id=current_user.id,
+                    db_session=db,
+                )
+                response_text = plan_result.final_answer
+            elif routing.fallback_message:
+                response_text = routing.fallback_message
+        except Exception as e:
+            import logging as _log
+            _log.getLogger(__name__).warning("RAG pipeline failed, falling back to standard LLM: %s", e)
+            should_use_rag = False
+
+    if not should_use_rag or not response_text:
+        # Standard LLM path (general chat or RAG fallback)
+        if context and kg_context:
+            user_prompt = f"DOCUMENT CONTEXT:\n{context}\n{kg_context}\n\nCONVERSATION HISTORY:\n{history}\n\nUSER QUESTION: {request.message}\n\nConsider the Knowledge Graph Recommendations above when relevant."
+        elif context:
+            user_prompt = f"DOCUMENT CONTEXT:\n{context}\n\nCONVERSATION HISTORY:\n{history}\n\nUSER QUESTION: {request.message}\n\nPlease answer based on the document context."
+        else:
+            user_prompt = f"USER QUESTION: {request.message}\n{kg_context}" if kg_context else f"USER QUESTION: {request.message}"
+
+        async for chunk in llm_service.generate(system_prompt, user_prompt, stream=False):
+            response_text += chunk
     
     # Record token usage
     prompt_tokens, completion_tokens, total_tokens = llm_service.last_usage
@@ -405,9 +479,32 @@ async def chat_stream(
                 except Exception:
                     pass
                 
+
+                # ── Knowledge Graph recommendation (for LLM prompt) ──
+                kg_context = ""
+                kg_suggestions = []
+                try:
+                    from app.services.knowledge_graph import recommend_from_query as kg_recommend
+                    kg_suggestions = await kg_recommend(session, request.message, top_k=5, min_confidence=0.2)
+                    if kg_suggestions:
+                        kg_context = "\nKnowledge Graph Recommendations:\n"
+                        for i, s in enumerate(kg_suggestions, 1):
+                            kg_context += f"{i}. [{s.type.upper()}] {s.target_name} (confidence: {s.confidence:.2f})\n"
+                            if s.explanation:
+                                kg_context += f"   Explanation: {s.explanation}\n"
+                            if s.example_queries:
+                                kg_context += f"   Examples: {', '.join(s.example_queries[:3])}\n"
+                except Exception as _ke:
+                    import logging as _ll
+                    _ll.getLogger(__name__).warning("KG recommendation failed: %s", _ke)
                 # Generate
                 system_prompt = "You are DocMind, an AI assistant specialized in analyzing documents."
-                user_prompt = f"DOCUMENT CONTEXT:{context}\n\nHISTORY:{history}\n\nQUESTION: {request.message}" if context else f"QUESTION: {request.message}"
+                if context and kg_context:
+                    user_prompt = f"DOCUMENT CONTEXT:\n{context}\n{kg_context}\n\nHISTORY:\n{history}\n\nUSER QUESTION: {request.message}\n\nConsider the Knowledge Graph Recommendations above when relevant."
+                elif context:
+                    user_prompt = f"DOCUMENT CONTEXT:\n{context}\n\nHISTORY:\n{history}\n\nUSER QUESTION: {request.message}"
+                else:
+                    user_prompt = f"USER QUESTION: {request.message}\n{kg_context}" if kg_context else f"USER QUESTION: {request.message}"
                 
                 full_response = ""
                 try:
@@ -445,6 +542,24 @@ async def chat_stream(
                         pass
                 
                 yield f"event: done\ndata: {assistant_msg.id}\n\n"
+                
+                # ── Knowledge Graph recommendations (SSE event for frontend) ──
+                try:
+                    sug_list = []
+                    for s in kg_suggestions:
+                        sug_list.append({
+                            "type": s.type,
+                            "confidence": s.confidence,
+                            "target_id": s.target_id,
+                            "target_name": s.target_name,
+                            "explanation": s.explanation,
+                            "example_queries": s.example_queries,
+                        })
+                    yield f"event: recommendations\ndata: {_json.dumps(sug_list, ensure_ascii=False)}\n\n"
+                except Exception as _ke:
+                    import logging as _ll
+                    _ll.getLogger(__name__).warning("KG SSE event failed: %s", _ke)
+                
                 yield f"event: references\ndata: {_json.dumps(references or [], ensure_ascii=False)}\n\n"
                 yield f"event: conversation_id\ndata: {conversation_id}\n\n"
         except Exception as gen_exc:

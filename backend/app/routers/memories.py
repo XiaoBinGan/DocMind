@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.database import Memory
+from app.models.database import Memory, get_db
 from app.models.schemas import (
     MemoryCreate, MemoryUpdate, MemoryResponse, MemoryListResponse, MemoryStatsResponse,
 )
@@ -19,18 +19,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
 
-
-async def get_db():
-    from app.main import async_session_maker
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 @router.get("/stats", response_model=MemoryStatsResponse)

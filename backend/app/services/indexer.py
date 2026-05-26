@@ -8,6 +8,7 @@ from typing import List, Optional
 from app.services.parser import document_parser
 from app.services.llm import llm_service
 from app.core.config import settings
+from app.services.entity_indexer import hybrid_entity_retriever
 
 logger = logging.getLogger(__name__)
 
@@ -317,34 +318,92 @@ class PageRetriever:
     """
     PageIndex 检索器
 
-    核心思路：
-    1. 接收用户问题
-    2. 让 LLM "思考"需要检索什么，遍历索引树
-    3. 选择最相关的节点
-    4. 返回上下文片段
+    核心思路（P1 升级后）：
+    1. 实体优先召回：先通过实体索引 + KG 路由定位相关页面
+    2. LLM 遍历索引树补充候选页面
+    3. 合并去重返回上下文片段
     """
 
     def __init__(self, index_tree: Optional[dict] = None, pages: Optional[List[dict]] = None):
         self.index_tree = IndexNode.from_dict(index_tree) if index_tree else None
         self.pages = pages or []
         self._page_map = {p["page_number"]: p for p in self.pages}
+        self._entity_index_built = False
 
     def set_index(self, index_tree: dict, pages: List[dict]):
         self.index_tree = IndexNode.from_dict(index_tree) if index_tree else None
         self.pages = pages
         self._page_map = {p["page_number"]: p for p in pages}
+        # Rebuild entity index when index changes
+        self._entity_index_built = False
 
-    async def retrieve(self, query: str, top_k: int = 5) -> List[dict]:
+    def build_entity_index(self) -> None:
+        """Build entity-aware index from current pages.
+
+        This extracts NER entities from each page, creates entity-annotated
+        chunks, and builds the entity inverted index for fast entity-first
+        retrieval. Safe to call multiple times (no-op if already built).
         """
-        Retrieve relevant content based on query using reasoning-based retrieval.
+        if self._entity_index_built and hybrid_entity_retriever.entity_indexer._index.chunks:
+            return
+        if not self.pages:
+            logger.warning("No pages to build entity index from")
+            return
+        try:
+            hybrid_entity_retriever.build(self.pages)
+            self._entity_index_built = True
+            stats = hybrid_entity_retriever.get_statistics()
+            logger.info("Entity index built: %s", stats.get("entity_index", {}))
+        except Exception as exc:
+            logger.warning("Failed to build entity index: %s", exc)
 
-        Instead of vector similarity, we use LLM to:
-        1. Analyze what information is needed
-        2. Traverse the index tree to find relevant sections
-        3. Extract content from relevant pages
+    async def retrieve(self, query: str, top_k: int = 5, use_entity_first: bool = True) -> List[dict]:
+        """
+        Retrieve relevant content based on query.
+
+        P1 升级：两步检索策略
+        Step 1: 实体优先召回 — match query entities against entity index
+        Step 2: LLM 树遍历 — use the indexed tree to find additional relevant sections
+        Step 3: 合并去重 — combine and deduplicate results
+
+        Args:
+            query: User search query
+            top_k: Maximum results to return
+            use_entity_first: Whether to enable entity-first recall (default True)
+
+        Returns:
+            List of result dicts with keys: page, content, reason, char_count, source
         """
         if not self.index_tree:
             return []
+
+        entity_results: List[dict] = []
+
+        # ── Step 1: Entity-first recall ──────────────────────────
+        if use_entity_first:
+            try:
+                # Ensure entity index is built
+                if not self._entity_index_built:
+                    self.build_entity_index()
+
+                entity_chunks = hybrid_entity_retriever.entity_indexer.query_entities(query, top_k=top_k)
+                seen_pages: set = set()
+                for chunk in entity_chunks:
+                    if chunk.page_num not in seen_pages and chunk.page_num in self._page_map:
+                        seen_pages.add(chunk.page_num)
+                        page = self._page_map[chunk.page_num]
+                        if page["content"]:
+                            entity_results.append({
+                                "page": chunk.page_num,
+                                "content": page["content"],
+                                "reason": f"Entity match: {', '.join(chunk.entity_tags[:3])}",
+                                "char_count": page["char_count"],
+                                "source": "entity_index",
+                            })
+            except Exception as exc:
+                logger.warning("Entity-first retrieval failed: %s, falling back to LLM tree", exc)
+
+        # ── Step 2: LLM tree traversal ───────────────────────────
 
         tree_repr = self._tree_to_text(self.index_tree)
 
@@ -391,10 +450,19 @@ Respond with JSON only, no other text."""
                                     "page": pn,
                                     "content": page["content"],
                                     "reason": reason,
-                                    "char_count": page["char_count"]
+                                    "char_count": page["char_count"],
+                                    "source": "llm_tree",
                                 })
 
-                return results
+                # ── Step 3: Merge entity + LLM results, deduplicate by page ──
+                entity_page_nums = {r["page"] for r in entity_results}
+                merged = list(entity_results)  # Entity results first
+                for r in results:
+                    if r["page"] not in entity_page_nums:
+                        merged.append(r)
+                        entity_page_nums.add(r["page"])
+
+                return merged[:top_k]
             else:
                 return self._fallback_retrieve(query, top_k)
 

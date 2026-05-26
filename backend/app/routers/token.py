@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.database import TokenUsage, User
+from app.models.database import TokenUsage, User, get_db
 from app.models.schemas import (
     TokenUsageResponse,
     TokenSummaryResponse,
@@ -20,19 +20,6 @@ from app.services.auth_service import get_current_user
 
 logger = logging.getLogger(__name__)
 
-
-async def get_db():
-    from app.main import async_session_maker
-    async with async_session_maker() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        else:
-            await session.commit()
-        finally:
-            await session.close()
 
 
 router = APIRouter(prefix="/api/token", tags=["token"])
@@ -264,7 +251,7 @@ async def record_token_usage(
             logger.warning("Failed to record token usage (db): %s", e)
         return
     
-    from app.main import engine as async_engine
+    from app.models.database import engine as async_engine
     from app.core.config import settings
     db_url = settings.DATABASE_URL
     

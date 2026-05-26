@@ -1,43 +1,17 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import text
 
 from app.core.config import settings
-from app.models.database import Base
-from app.routers import documents, chat, models, settings as settings_router, auth, memory, memories, token, api_catalog
+from app.models.database import Base, engine, get_db, AsyncSessionLocal
 
-# Database setup
-engine = create_async_engine(settings.DATABASE_URL, echo=settings.DEBUG, connect_args={"timeout": 30, "check_same_thread": False})
-async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-# Enable WAL mode for better concurrent access
-from sqlalchemy import text
 async def _enable_wal():
+    """Enable WAL mode for better concurrent access."""
     async with engine.begin() as conn:
         await conn.execute(text("PRAGMA journal_mode=WAL"))
         await conn.execute(text("PRAGMA synchronous=NORMAL"))
         await conn.execute(text("PRAGMA busy_timeout=5000"))
-
-import asyncio
-
-# Export for use in routers
-async_session_maker = async_session_maker
-
-
-@asynccontextmanager
-async def get_db_session():
-    """Dependency to get database session."""
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 async def init_db():
@@ -57,7 +31,7 @@ async def lifespan(app: FastAPI):
 
     # Initialize settings service with session maker
     from app.services.settings_service import settings_service
-    settings_service.init(async_session_maker)
+    settings_service.init(AsyncSessionLocal)
     await settings_service.reload()
 
     # Ensure JWT secret key exists in DB
@@ -81,25 +55,37 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS middleware
+# Custom middleware imports
+from app.core.middleware import RateLimitMiddleware, ErrorHandlingMiddleware
+
+# CORS middleware - tightened security
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https?://.*",
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Only frontend origins
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
+# Rate limiting middleware (100 requests per minute per IP)
+app.add_middleware(RateLimitMiddleware, max_requests=100, window_seconds=60)
+
+# Global error handling middleware
+app.add_middleware(ErrorHandlingMiddleware)
+
+# Import routers after app is created
+from app.routers import auth, documents, chat, models, settings as settings_router, memory, memories, token, api_catalog
+
 # Include routers
-app.include_router(auth.router)
-app.include_router(documents.router)
-app.include_router(chat.router)
-app.include_router(models.router)
-app.include_router(settings_router.router)
-app.include_router(memory.router)
-app.include_router(memories.router)
-app.include_router(token.router)
-app.include_router(api_catalog.router)
+app.include_router(auth.router, dependencies=[Depends(get_db)])
+app.include_router(documents.router, dependencies=[Depends(get_db)])
+app.include_router(chat.router, dependencies=[Depends(get_db)])
+app.include_router(models.router, dependencies=[Depends(get_db)])
+app.include_router(settings_router.router, dependencies=[Depends(get_db)])
+app.include_router(memory.router, dependencies=[Depends(get_db)])
+app.include_router(memories.router, dependencies=[Depends(get_db)])
+app.include_router(token.router, dependencies=[Depends(get_db)])
+app.include_router(api_catalog.router, dependencies=[Depends(get_db)])
 
 
 @app.get("/")
@@ -116,7 +102,3 @@ async def root():
 async def health():
     """Health check endpoint."""
     return {"status": "healthy"}
-
-
-# Export for use in routers
-app.get_db_session = get_db_session

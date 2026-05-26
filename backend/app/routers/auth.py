@@ -9,7 +9,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models.database import User, Conversation, Message
+from app.models.database import User, Conversation, Message, get_db
 from app.models.schemas import (
     UserResponse, UserCreate, UserLogin, UserUpdate,
     TokenResponse, ChangePasswordRequest, UserToggleBody,
@@ -22,18 +22,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-
-async def get_db():
-    from app.main import async_session_maker
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────

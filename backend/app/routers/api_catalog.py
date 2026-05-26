@@ -3,10 +3,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.database import get_db
+
 from app.services.api_catalog import (
     create_api, get_api, list_apis, update_api, delete_api, toggle_api, search_apis,
     create_chain, get_chain, list_chains, update_chain, delete_chain, execute_chain,
-    suggest_tools,
+    suggest_tools, execute_api_direct,
+)
+from app.services.knowledge_graph import (
+    rebuild_all_kg, search_concepts, get_neighbors, recommend_from_query, get_kg_stats,
 )
 from app.services.serial_chain import (
     create_chain as create_chain_svc,
@@ -26,17 +31,6 @@ router = APIRouter(prefix="/api-catalog", tags=["API Catalog"])
 
 
 # ---- Session dependency ----
-
-async def get_db():
-    """Yield an async database session."""
-    from app.main import async_session_maker
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
 
 
 # ---- Static paths MUST come before wildcard paths ----
@@ -145,3 +139,121 @@ async def delete_api_endpoint(api_id: str, session: AsyncSession = Depends(get_d
 @router.patch("/{api_id}/toggle")
 async def toggle_api_endpoint(api_id: str, enabled: bool = Query(...), session: AsyncSession = Depends(get_db)):
     return await toggle_api(session, api_id, enabled)
+
+
+# ---- API Direct Execution ----
+
+@router.post("/apis/{api_id}/execute", summary="直接执行 API")
+async def execute_api_endpoint(
+    api_id: str,
+    data: ChainExecuteRequest = ChainExecuteRequest(),
+    session: AsyncSession = Depends(get_db),
+):
+    """直接执行一个已注册的 API（无需通过 Chain）。"""
+    result = await execute_api_direct(session, api_id, data.input_data)
+    return result
+
+
+# ──────────────── ���识图谱 ────────────────
+
+@router.post("/kg/rebuild", summary="重建知识图谱")
+async def rebuild_kg_endpoint(session: AsyncSession = Depends(get_db)):
+    """重建知识图谱（清除旧数据并重新扫描）。"""
+    result = await rebuild_all_kg(session)
+    return {"status": "ok", "details": result}
+
+
+@router.get("/kg/stats", summary="知识图谱统计")
+async def kg_stats_endpoint(session: AsyncSession = Depends(get_db)):
+    """获取知识图谱统计信息。"""
+    stats = await get_kg_stats(session)
+    return stats
+
+
+@router.get("/kg/search", summary="搜索概念节点")
+async def kg_search_endpoint(
+    keyword: str = Query(..., min_length=1),
+    limit: int = Query(10, ge=1, le=50),
+    session: AsyncSession = Depends(get_db),
+):
+    """搜索知识图谱中的概念节点。"""
+    nodes = await search_concepts(session, keyword, limit)
+    return {"nodes": [n.to_dict() for n in nodes]}
+
+
+@router.get("/kg/neighbors/{node_id}", summary="获取节点邻居")
+async def kg_neighbors_endpoint(
+    node_id: str,
+    max_depth: int = Query(2, ge=1, le=3),
+    session: AsyncSession = Depends(get_db),
+):
+    """获取知识图谱中节点的邻居（多跳）。"""
+    data = await get_neighbors(session, node_id, max_depth)
+    return data
+
+
+@router.get("/kg/recommend", summary="知识图谱推荐")
+async def kg_recommend_endpoint(
+    query: str = Query(..., min_length=1),
+    top_k: int = Query(5, ge=1, le=10),
+    min_confidence: float = Query(0.3, ge=0.0, le=1.0),
+    session: AsyncSession = Depends(get_db),
+):
+    """基于知识图谱为用户查询推荐 API/工作流。"""
+    suggestions = await recommend_from_query(session, query, top_k, min_confidence)
+    return {"suggestions": [s.dict() for s in suggestions]}
+
+
+import json as _json
+
+
+@router.get("/kg/nodes", summary="获取所有KG节点")
+async def kg_list_nodes(
+    kind: str = Query(None, description="节点类型过滤(concept/api/chain/document)"),
+    session: AsyncSession = Depends(get_db),
+):
+    """获取知识图谱所有节点。"""
+    from app.models.database import KGNode
+    from sqlalchemy import select
+
+    q = select(KGNode)
+    if kind:
+        q = q.where(KGNode.kind == kind)
+    result = await session.execute(q)
+    nodes = result.scalars().all()
+    return {"nodes": [
+        {
+            "id": n.id,
+            "label": n.label,
+            "kind": n.kind,
+            "source_id": n.source_id,
+            "frequency": n.frequency,
+            "payload": _json.loads(n.payload) if n.payload else {},
+            "created_at": n.created_at.isoformat() if n.created_at else None,
+        }
+        for n in nodes
+    ]}
+
+
+@router.get("/kg/edges", summary="获取所有KG边")
+async def kg_list_edges(
+    session: AsyncSession = Depends(get_db),
+):
+    """获取知识图谱所有边。"""
+    from app.models.database import KGEdge
+    from sqlalchemy import select
+
+    q = select(KGEdge)
+    result = await session.execute(q)
+    edges = result.scalars().all()
+    return {"edges": [
+        {
+            "id": e.id,
+            "source_id": e.source_id,
+            "target_id": e.target_id,
+            "relation": e.relation,
+            "weight": e.weight,
+            "created_at": e.created_at.isoformat() if e.created_at else None,
+        }
+        for e in edges
+    ]}

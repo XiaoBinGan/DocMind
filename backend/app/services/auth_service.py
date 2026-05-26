@@ -94,7 +94,7 @@ async def get_optional_user(
     user_id: str = payload.get("sub")
     if not user_id:
         return None
-    from app.main import async_session_maker
+    from app.models.database import AsyncSessionLocal as async_session_maker
     async with async_session_maker() as session:
         try:
             result = await session.execute(select(User).where(User.id == user_id))
@@ -120,7 +120,7 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
-    from app.main import async_session_maker
+    from app.models.database import AsyncSessionLocal as async_session_maker
     async with async_session_maker() as session:
         try:
             result = await session.execute(select(User).where(User.id == user_id))
@@ -137,7 +137,7 @@ async def get_current_user(
 
 async def ensure_jwt_secret_key():
     """Ensure a JWT secret key exists in the settings DB. Generate one if not."""
-    from app.main import async_session_maker
+    from app.models.database import AsyncSessionLocal as async_session_maker
     from app.services.settings_service import settings_service
     async with async_session_maker() as session:
         row = await session.get(Setting, JWT_SECRET_KEY_DB)
@@ -161,7 +161,7 @@ async def ensure_jwt_secret_key():
 
 async def ensure_default_admin():
     """Create the default admin user (admin / admin123) if it doesn't exist."""
-    from app.main import async_session_maker
+    from app.models.database import AsyncSessionLocal as async_session_maker
     import uuid
     async with async_session_maker() as session:
         try:

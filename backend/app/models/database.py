@@ -1,10 +1,35 @@
 from sqlalchemy import Column, String, Integer, DateTime, Text, JSON, ForeignKey, Boolean
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
+from sqlalchemy import text
 from datetime import datetime
 import uuid
 
+from app.core.config import settings
+
 Base = declarative_base()
+
+# Database engine setup
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    connect_args={"timeout": 30, "check_same_thread": False}
+)
+AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+
+async def get_db() -> AsyncSession:
+    """Dependency to get database session."""
+    async with AsyncSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+        finally:
+            await session.close()
 
 def generate_id():
     return str(uuid.uuid4())
@@ -172,8 +197,9 @@ class SerialChainMember(Base):
 
 
 class ApiUsageLog(Base):
+    """API usage log."""
     __tablename__ = "api_usage_logs"
-    
+
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     chain_id = Column(String, ForeignKey("serial_chains.id"), nullable=True)
     api_id = Column(String, ForeignKey("api_definitions.id"), nullable=True)
@@ -182,4 +208,32 @@ class ApiUsageLog(Base):
     status_code = Column(Integer)
     duration_ms = Column(Integer)
     error = Column(Text, default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ======================== 知识图谱模型 ========================
+
+class KGNode(Base):
+    """Knowledge graph node."""
+    __tablename__ = "kg_nodes"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    label = Column(String(200), nullable=False, index=True)  # node name
+    kind = Column(String(30), nullable=False, index=True)  # concept / api / chain / document
+    payload = Column(Text, default="{}")  # JSON metadata
+    source_id = Column(String, nullable=True, index=True)  # reference to api_definitions.serial_chains etc.
+    frequency = Column(Integer, default=1)  # how often this node is referenced
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class KGEdge(Base):
+    """Knowledge graph edge (relationship)."""
+    __tablename__ = "kg_edges"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    source_id = Column(String, nullable=False, index=True)
+    target_id = Column(String, nullable=False, index=True)
+    relation = Column(String(50), nullable=False, index=True)  # related_to / suitable_for / enabled_by / mentioned_in
+    weight = Column(Integer, default=1)  # edge weight
     created_at = Column(DateTime, default=datetime.utcnow)

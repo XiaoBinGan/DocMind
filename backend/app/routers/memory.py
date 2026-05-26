@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 
-from app.models.database import Memory
+from app.models.database import Memory, get_db
 from app.models.schemas import (
     MemoryCreate, MemoryUpdate, MemoryResponse,
     MemoryListResponse, MemoryStatsResponse,
@@ -17,18 +17,6 @@ from app.models.schemas import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/memories", tags=["memory"])
 
-
-async def get_db():
-    from app.main import async_session_maker
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 def _mem_to_response(m: Memory) -> MemoryResponse:
@@ -146,8 +134,8 @@ async def delete_memory(memory_id: str, db: AsyncSession = Depends(get_db)):
 async def consolidate_memories(
     days: int = Query(7, ge=1, le=90, description="Consolidate daily notes older than N days"),
 ):
-    from app.main import async_session_maker
     from app.services.memory_service import consolidate_daily_memories
+    from app.models.database import AsyncSessionLocal as async_session_maker
     user_id = "default"
     count = await consolidate_daily_memories(user_id, async_session_maker, days=days)
     return {"message": f"Consolidated {count} long-term memories from daily notes", "created": count}

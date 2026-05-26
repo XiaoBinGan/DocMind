@@ -7,26 +7,13 @@ import os
 import uuid
 import aiofiles
 
-from app.models.database import Document, User
+from app.models.database import Document, User, get_db
 from app.models.schemas import DocumentResponse, DocumentListResponse, IndexStatusResponse, IndexNode
 from app.services.auth_service import get_current_user
 from app.services.parser import document_parser
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
-
-async def get_db():
-    """Dependency to get database session."""
-    from app.main import async_session_maker
-    async with async_session_maker() as session:
-        try:
-            yield session
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
 
 
 def _doc_filter_query(current_user: User, include_public: bool = True):
